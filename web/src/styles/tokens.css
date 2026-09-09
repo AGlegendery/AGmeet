@@ -147,3 +147,47 @@
     --glass-4-bg: rgba(14, 16, 30, 0.98);
   }
 }
+
+/* ==========================================================================
+   Glass tiers
+   --------------------------------------------------------------------------
+   `data-glass` is set on <html> from the client's own capabilities and its
+   measured frame rate (see src/glass.ts). It only ever moves downward.
+   ========================================================================== */
+
+/* Weak clients: the translucency goes entirely. Not "less blur" — blur is
+   the expensive part, and a 2px blur costs nearly what a 32px one does while
+   looking like a mistake. Flat, opaque, legible, cheap. */
+:root[data-glass="minimal"] {
+  --glass-1-bg: #0e101c;
+  --glass-2-bg: #121422;
+  --glass-3-bg: #141628;
+  --glass-4-bg: #10121e;
+  --glass-1-blur: 0px;
+  --glass-2-blur: 0px;
+  --glass-3-blur: 0px;
+  --glass-4-blur: 0px;
+}
+
+:root[data-glass="minimal"] .glass-1,
+:root[data-glass="minimal"] .glass-2,
+:root[data-glass="minimal"] .glass-3,
+:root[data-glass="minimal"] .glass-4,
+:root[data-glass="minimal"] .tile__name,
+:root[data-glass="minimal"] .tip::after,
+:root[data-glass="minimal"] .reaction,
+:root[data-glass="minimal"] .board__readonly {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* The atmospheric pools are a large blurred paint; on a machine already
+   short of GPU they are pure cost. */
+:root[data-glass="minimal"] body::before {
+  filter: none;
+  opacity: 0.55;
+}
+
+:root[data-glass="minimal"] body::after {
+  display: none;
+}

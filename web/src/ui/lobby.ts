@@ -33,7 +33,10 @@ const NAME_KEY = "agmeet.name";
 
 export function buildLobby(
   roomFromUrl: string | null,
-  onJoin: (result: LobbyResult) => void
+  onJoin: (result: LobbyResult) => void,
+  /** Handed the preview box and its floating controls so the caller can give
+   *  them a glass surface. Live video sits directly behind those controls. */
+  onSurfaces?: (previewRoot: HTMLElement, controls: HTMLElement) => void
 ): HTMLElement {
   let stream: MediaStream | null = null;
   let wantMic = true;
@@ -66,11 +69,11 @@ export function buildLobby(
     html: icons.camera,
   }) as HTMLButtonElement;
 
-  const preview = el("div", { class: "lobby__preview" }, [
-    video,
-    previewState,
-    el("div", { class: "lobby__preview-controls glass-4" }, [micToggle, camToggle]),
+  const previewControls = el("div", { class: "lobby__preview-controls glass-4" }, [
+    micToggle,
+    camToggle,
   ]);
+  const preview = el("div", { class: "lobby__preview" }, [video, previewState, previewControls]);
   video.hidden = true;
 
   // --- Form --------------------------------------------------------------
@@ -337,6 +340,7 @@ export function buildLobby(
 
   paintToggles();
   void start();
+  onSurfaces?.(preview, previewControls);
 
   return el("main", { class: "lobby" }, [
     el("div", { class: "lobby__card glass-2" }, [preview, form]),

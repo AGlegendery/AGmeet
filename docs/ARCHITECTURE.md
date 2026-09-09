@@ -180,6 +180,62 @@ process; `mediasoup` or LiveKit would be a second service. Either way it
 should stay **optional**, selected per deployment, so a small install keeps
 paying nothing for capacity it does not use.
 
+## Liquid glass, and what it costs
+
+`web/src/glass.ts`.
+
+[`@ybouane/liquidglass`](https://github.com/ybouane/liquidglass) (MIT) is not
+`backdrop-filter`. It rasterises the scene behind each panel onto a canvas and
+runs a WebGL fragment shader over it — refraction, a bevel, a rim, a shadow —
+every frame. That is why it looks like a material rather than a blurred
+rectangle, and why it cannot simply be switched on for everyone.
+
+**Three structural facts decided the integration.**
+
+*Panels must be direct children of the root they refract.* That rules out the
+sidebar, header and side panel: refracting those would mean making the whole
+app the root and rasterising all of it every frame, to no benefit — they are
+large and they sit still. Only genuinely floating bars are handed over: the
+control dock, the whiteboard toolbar, and the lobby's camera controls.
+
+*The renderer composites the root's children, not the root's own background.*
+The stage used to paint its surface on itself, with the page's atmospheric
+gradient behind it on `body::before`. Neither is a child, so the dock was
+refracting an empty canvas and came out white with invisible icons. The fix
+is `.stage__ground`: the stage's surface moved into a real child element that
+the renderer can sample. It also carries a soft pool of light under the dock,
+because glass only reads as glass when there is something behind it to bend.
+
+*Nested video still gets the fast path.* A direct `img`/`video`/`canvas` child
+is drawn with `drawImage`; a wrapper is walked for media descendants which are
+also drawn directly, and only the wrapper's HTML chrome goes through
+`html-to-image`, cached until it changes. Our videos are two levels down
+inside `.stage__grid` and are handled correctly. The lobby's camera preview is
+the best subject in the product — live video directly behind a floating pill.
+
+**Matte is mostly subtraction.** The library's defaults are a glossy lens:
+strong Fresnel, a specular hotspot, chromatic fringing. Removing the specular
+and most of the Fresnel kills the two things that read as "polished", dropping
+the fringing removes the last of it, and pushing `blurAmount` to 0.82 makes
+the panel frost what is behind it instead of magnifying it. What remains is
+refraction at the bevel and a soft rim, which is what thick sandblasted glass
+actually does.
+
+**The tier is earned, not assumed.** Detection runs before anything is
+downloaded and the shader bundle is a lazy import reached only on the top
+tier, so a weak client fetches one JavaScript file and never learns the other
+exists. Software renderers (SwiftShader, llvmpipe) are detected through
+`WEBGL_debug_renderer_info` and sent straight to `minimal`, as is anyone who
+asked for reduced motion.
+
+Then the guess is checked against reality. Capability flags describe hardware;
+they cannot know the machine is also running a build, or that the room has
+twelve cameras in it. The renderer publishes a measured `fps`, which is
+sampled once a second; four consecutive seconds under 26 fps takes every
+surface back to CSS glass and records the demotion for the session, because a
+machine that failed once will fail again. All of it is client-side: the server
+never learns a tier exists.
+
 ## Deliberate non-goals
 
 - **No accounts.** Room codes are the access control. Anyone with the code and

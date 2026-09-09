@@ -303,6 +303,34 @@
    Meeting stage
    ========================================================================== */
 
+/* The stage's own surface, as a paintable child.
+   It reproduces what `glass-1` over the page atmosphere used to give — a
+   near-black slate with two faint pools of accent light — but as real paint,
+   so the glass renderer can sample it. */
+.stage__ground {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background:
+    /* A soft pool where the control dock floats. Without a light source
+       under it the refraction has nothing to bend and the bar reads as a
+       flat grey pill. */
+    radial-gradient(34% 26% at 50% 96%, rgba(123, 108, 255, 0.16), transparent 70%),
+    radial-gradient(58% 58% at 18% 12%, rgba(123, 108, 255, 0.13), transparent 66%),
+    radial-gradient(52% 56% at 86% 92%, rgba(76, 201, 240, 0.075), transparent 62%),
+    linear-gradient(158deg, #0c0e1a 0%, #090b14 60%, #070812 100%);
+}
+
+/* Everything else on the stage sits above that surface. */
+.stage__grid,
+.dock,
+.reactions,
+.stage > .state {
+  position: relative;
+  z-index: 1;
+}
+
 .stage__grid {
   display: flex;
   flex-wrap: wrap;
@@ -680,4 +708,40 @@
   .tip::after {
     display: none;
   }
+}
+
+/* ==========================================================================
+   Full tier: WebGL liquid glass
+   --------------------------------------------------------------------------
+   The shader renders the panel — its bevel, rim, tint and shadow — into a
+   canvas injected behind the element's own content. So the element's CSS
+   surface has to get out of the way completely, or it paints over the thing
+   it is supposed to be.
+
+   Only surfaces that are genuinely floating bars are handed over. The
+   sidebar, header and side panel keep CSS glass at every tier: they are
+   large, they sit still, and rasterising the whole app behind them every
+   frame would buy nothing.
+   ========================================================================== */
+
+:root[data-glass="full"] .dock[data-config],
+:root[data-glass="full"] .board__toolbar[data-config] {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* The injected canvas is z-index:-1 inside the element, so the element needs
+   a stacking context of its own for the controls to sit above it. */
+:root[data-glass="full"] .dock[data-config],
+:root[data-glass="full"] .board__toolbar[data-config] {
+  isolation: isolate;
+}
+
+/* The shader draws its own drop shadow with a wider, softer falloff than the
+   CSS one, and it needs room to land. */
+:root[data-glass="full"] .dock[data-config] {
+  overflow: visible;
 }

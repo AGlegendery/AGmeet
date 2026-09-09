@@ -31,6 +31,7 @@ export interface StageOptions {
 export class Stage {
   readonly root: HTMLElement;
   private readonly grid: HTMLElement;
+  private readonly ground: HTMLElement;
   private readonly filmstrip: HTMLElement;
   private readonly emptyState: HTMLElement;
 
@@ -47,7 +48,13 @@ export class Stage {
     this.grid = el("div", { class: "stage__grid" });
     this.filmstrip = el("div", { class: "filmstrip", hidden: true });
     this.emptyState = this.buildEmptyState();
-    this.root = el("section", { class: "stage glass-1", "aria-label": "Meeting stage" }, [
+    // The stage's surface lives in its own child rather than on the stage
+    // itself. The liquid-glass renderer composites a root's children, so a
+    // background painted by the root is invisible to it and the floating
+    // dock would refract nothing at all.
+    this.ground = el("div", { class: "stage__ground", "aria-hidden": "true" });
+    this.root = el("section", { class: "stage", "aria-label": "Meeting stage" }, [
+      this.ground,
       this.grid,
     ]);
 

@@ -13,6 +13,7 @@ import "./styles/components.css";
 import "./styles/views.css";
 
 import { el, prefersReducedMotion, qs } from "./dom";
+import { detectTier, GlassSurfaces } from "./glass";
 import { icons } from "./icons";
 import {
   acquireLocalStream,
@@ -43,6 +44,25 @@ import { toast } from "./ui/toast";
 
 const app = qs("#app");
 
+// Decided once, before anything is rendered or downloaded: the stylesheet
+// reads it off <html>, and only the top tier ever fetches the WebGL library.
+const { tier: initialTier, reason: tierReason } = detectTier();
+document.documentElement.dataset.glass = initialTier;
+if (initialTier !== "full") {
+  console.info(`AGmeet: glass tier "${initialTier}" — ${tierReason}`);
+}
+
+/**
+ * One manager for the whole app. Sharing it means the lobby and the meeting
+ * agree on a tier, and a downgrade decided while checking your camera is
+ * still in force once you are in the room.
+ */
+const glass = new GlassSurfaces(initialTier, (tier, reason) => {
+  document.documentElement.dataset.glass = tier;
+  console.info(`AGmeet: glass tier lowered to "${tier}" — ${reason}`);
+  toast("Switched to lighter visuals to keep the call smooth");
+});
+
 /** Room comes from /r/<code> or ?room=<code>; both make a shareable link. */
 function roomFromLocation(): string | null {
   const path = location.pathname.match(/^\/r\/([A-Za-z0-9_-]{1,64})\/?$/);
@@ -52,7 +72,24 @@ function roomFromLocation(): string | null {
 }
 
 function showLobby(): void {
-  app.replaceChildren(buildLobby(roomFromLocation(), (result) => startMeeting(result)));
+  glass.detach("lobby");
+  app.replaceChildren(
+    buildLobby(
+      roomFromLocation(),
+      (result) => {
+        glass.detach("lobby");
+        startMeeting(result);
+      },
+      (previewRoot, controls) => {
+        if (glass.currentTier !== "full") return;
+        void glass.attach("lobby", previewRoot, [controls], {
+          cornerRadius: 30,
+          zRadius: 14,
+          shadowSpread: 22,
+        });
+      }
+    )
+  );
 }
 
 function startMeeting(config: LobbyResult): void {
@@ -140,6 +177,20 @@ function startMeeting(config: LobbyResult): void {
   ]);
 
   app.replaceChildren(shell);
+
+  // --- Liquid glass --------------------------------------------------------
+  // Only the floating bars get the real effect, and only on the top tier.
+  // The watchdog can take it away mid-call; when it does, every surface
+  // drops back to CSS glass together so nothing looks half-finished.
+  if (glass.currentTier === "full") {
+    // Root is the stage: its children are the scene the dock refracts.
+    void glass.attach("dock", stage.root, [dock.root], {
+      // A pill: half the dock's height, with a shallow bevel so the bar
+      // reads as a slab of frosted glass rather than a lens.
+      cornerRadius: 32,
+      zRadius: 15,
+    });
+  }
 
   dock.setScreenAvailable(typeof navigator.mediaDevices?.getDisplayMedia === "function");
   dock.setState({ mic: micOn, cam: camOn, screen: false, hand: false, board: false });
@@ -358,6 +409,21 @@ function startMeeting(config: LobbyResult): void {
     boardOpen = open;
     stage.setPresentation(open ? board.root : null);
     if (open) board.resize();
+
+    // The toolbar sits directly over the drawing canvas, which the renderer
+    // samples through its fast path, so this is the one surface in the app
+    // with genuinely interesting content behind it.
+    if (glass.currentTier === "full") {
+      if (open) {
+        void glass.attach("boardToolbar", board.root, [board.toolbar], {
+          cornerRadius: 22,
+          zRadius: 11,
+          shadowSpread: 20,
+        });
+      } else {
+        glass.detach("boardToolbar");
+      }
+    }
     dock.setState({
       mic: micOn,
       cam: camOn,
@@ -621,6 +687,8 @@ function startMeeting(config: LobbyResult): void {
     window.clearInterval(clockTimer);
     document.removeEventListener("keydown", onKeydown);
     localDetector.detach();
+    glass.detach("dock");
+    glass.detach("boardToolbar");
     board.destroy();
     mesh.destroy();
     signaling.close();

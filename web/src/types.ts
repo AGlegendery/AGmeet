@@ -105,3 +105,9 @@ export type SignalPayload =
   | { kind: "ice"; candidate: RTCIceCandidateInit };
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "poor" | "lost";
+
+/**
+ * How much glass this client can afford. Decided from its own capabilities
+ * and its measured frame rate; never sent to or from the server.
+ */
+export type GlassTier = "full" | "enhanced" | "minimal";

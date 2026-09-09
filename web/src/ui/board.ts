@@ -43,6 +43,8 @@ export interface BoardHandlers {
 
 export interface BoardHandles {
   root: HTMLElement;
+  /** The floating toolbar, exposed so it can be given a glass surface. */
+  toolbar: HTMLElement;
   setStrokes: (strokes: Stroke[]) => void;
   applyDraw: (id: string, color: number, width: number, erase: boolean, points: [number, number][]) => void;
   applyUndo: (id: string) => void;
@@ -406,6 +408,7 @@ export function buildBoard(handlers: BoardHandlers): BoardHandles {
 
   return {
     root,
+    toolbar,
     setStrokes(list) {
       strokes.clear();
       order.length = 0;

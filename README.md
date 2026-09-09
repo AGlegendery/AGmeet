@@ -11,6 +11,9 @@ lets it run on a small VPS and start in milliseconds.
 - **Nothing to install** — participants open a link.
 - **Classroom tools** — a shared whiteboard and anonymous polls, in the same
   design system as everything else.
+- **Liquid glass, if the machine can afford it** — a real WebGL refraction
+  shader on the floating bars, gated on the client's capabilities and its
+  measured frame rate.
 
 ## Quick start
 
@@ -102,6 +105,42 @@ almost nothing. For thirty simultaneous cameras it is the wrong shape, and
 you want an SFU — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for where
 that would slot in.
 
+## Visual tiers
+
+The floating bars — the meeting control dock, the whiteboard toolbar, the
+lobby's camera controls — can be rendered with a genuine refraction shader
+([`@ybouane/liquidglass`](https://github.com/ybouane/liquidglass), MIT) rather
+than a CSS blur. It is beautiful and it is not free, so it is earned:
+
+| Tier | What runs | Who gets it |
+| --- | --- | --- |
+| `full` | WebGL liquid glass on the floating bars | WebGL2, a real GPU, 4+ cores, >4 GB, pointer device |
+| `enhanced` | CSS `backdrop-filter`, the standard look | Mobile, few cores, modest memory |
+| `minimal` | Opaque surfaces, no blur anywhere | Software renderers, reduced-motion, slow displays |
+
+Three things make this safe on old hardware:
+
+1. **The tier is decided before anything is downloaded.** The 17 KB shader
+   bundle is a lazy import reached only on `full`; a weak client fetches one
+   JavaScript file and never learns the other exists.
+2. **`minimal` removes blur rather than reducing it.** A 2px backdrop blur
+   costs nearly what a 32px one does and looks like a mistake, so that tier
+   goes flat and opaque instead.
+3. **A watchdog overrules the guess.** Capability flags describe hardware;
+   they cannot know this laptop is also running a build, or that this room
+   has twelve cameras in it. The renderer's measured frame rate is sampled
+   once a second, and four consecutive seconds under 26 fps drops every
+   surface back to CSS glass for the rest of the session.
+
+None of it reaches the server. The tier is a property of the browser in front
+of it.
+
+To pin a tier yourself:
+
+```js
+localStorage.setItem("agmeet.glass", "full"); // or "enhanced" / "minimal"
+```
+
 ## Keyboard
 
 | Key | Action |
@@ -131,7 +170,9 @@ Two environment variables, both optional: `AGMEET_URL` to point at a server
 somewhere other than `http://127.0.0.1:8080`, and `CHROMIUM_PATH` to use a
 Chromium that is already on the machine instead of downloading one.
 
-`meeting.test.mjs` covers joining, peer-to-peer video, chat, media state,
+`glass.test.mjs` asserts that a weak client resolves to a lower tier and
+never requests the shader bundle, and that a forced `full` client renders the
+shader canvas. `meeting.test.mjs` covers joining, peer-to-peer video, chat, media state,
 moderation, the adaptive grid and the mobile layout. `classroom.test.mjs`
 covers the whiteboard and polls, reading the canvas pixels on the receiving
 side to prove ink actually crossed the wire. `accessibility.test.mjs`
@@ -149,6 +190,7 @@ web/             TypeScript client, no framework
   src/rtc.ts       the peer mesh
   src/media.ts     devices, screen capture, speech detection
   src/styles/      the design system, tokens first
+  src/glass.ts     capability tiers, lazy loading, the frame-rate watchdog
   src/ui/          stage, dock, panel, lobby, shell, board, polls
 tests/           browser tests
 docs/            architecture and design notes

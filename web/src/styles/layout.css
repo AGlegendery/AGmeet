@@ -124,12 +124,16 @@
 }
 
 /* The stage itself. Everything else on screen defers to this. */
+/* The fill is painted by .stage__ground, not here: see the note there. The
+   stage keeps only its frame and its clipping. */
 .stage {
   position: relative;
   min-width: 0;
   min-height: 0;
+  border: 1px solid var(--glass-1-border);
   border-radius: var(--r-xl);
   overflow: hidden;
+  box-shadow: var(--edge-light), var(--shadow-1);
 }
 
 /* --- Context panel --------------------------------------------------------
