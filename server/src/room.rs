@@ -11,12 +11,25 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 use crate::protocol::{
-    ChatMessage, MediaState, ParticipantId, ParticipantView, Role, RoomView, ServerMessage,
+    BoardView, ChatMessage, MediaState, ParticipantId, ParticipantView, PollView, Role, RoomView,
+    ServerMessage, Stroke,
 };
 
 /// Chat kept per room so a late joiner sees recent context. Bounded so a
 /// long-running room cannot grow without limit.
 const CHAT_HISTORY: usize = 200;
+
+/// Whiteboard limits. A board is a shared buffer that anyone in the room can
+/// append to, so every dimension of it is bounded.
+const MAX_STROKES: usize = 2000;
+const MAX_POINTS_PER_STROKE: usize = 4000;
+
+/// Poll limits, sized for a classroom rather than a survey tool.
+const MAX_POLLS: usize = 20;
+pub const MAX_QUESTION_LEN: usize = 200;
+pub const MAX_OPTION_LEN: usize = 80;
+pub const MIN_OPTIONS: usize = 2;
+pub const MAX_OPTIONS: usize = 6;
 
 pub type Outbox = mpsc::UnboundedSender<ServerMessage>;
 
@@ -58,6 +71,110 @@ impl Participant {
     }
 }
 
+/// The shared whiteboard.
+#[derive(Default)]
+pub struct Board {
+    pub open: bool,
+    pub locked: bool,
+    strokes: Vec<Stroke>,
+    /// Who drew each stroke, so a participant can undo their own work without
+    /// being able to remove anyone else's.
+    authors: HashMap<Uuid, ParticipantId>,
+}
+
+impl Board {
+    pub fn view(&self) -> BoardView {
+        BoardView { open: self.open, locked: self.locked, strokes: self.strokes.clone() }
+    }
+
+    /// Appends to an existing stroke, or starts one. Returns false when the
+    /// stroke belongs to somebody else, which stops a client extending another
+    /// participant's line by reusing its id.
+    pub fn append(
+        &mut self,
+        author: ParticipantId,
+        id: Uuid,
+        color: u8,
+        width: u8,
+        erase: bool,
+        points: Vec<[f32; 2]>,
+    ) -> bool {
+        match self.authors.get(&id) {
+            Some(owner) if *owner != author => return false,
+            Some(_) => {
+                if let Some(stroke) = self.strokes.iter_mut().find(|s| s.id == id) {
+                    let room = MAX_POINTS_PER_STROKE.saturating_sub(stroke.points.len());
+                    stroke.points.extend(points.into_iter().take(room));
+                }
+            }
+            None => {
+                if self.strokes.len() >= MAX_STROKES {
+                    // Drop the oldest stroke rather than refusing to draw; a
+                    // board that silently stops working is worse than one that
+                    // forgets its earliest marks.
+                    let oldest = self.strokes.remove(0);
+                    self.authors.remove(&oldest.id);
+                }
+                self.authors.insert(id, author);
+                self.strokes.push(Stroke {
+                    id,
+                    color,
+                    width,
+                    erase,
+                    points: points.into_iter().take(MAX_POINTS_PER_STROKE).collect(),
+                });
+            }
+        }
+        true
+    }
+
+    /// Removes a stroke if `author` drew it.
+    pub fn undo(&mut self, author: ParticipantId, id: Uuid) -> bool {
+        if self.authors.get(&id) != Some(&author) {
+            return false;
+        }
+        self.authors.remove(&id);
+        self.strokes.retain(|s| s.id != id);
+        true
+    }
+
+    pub fn clear(&mut self) {
+        self.strokes.clear();
+        self.authors.clear();
+    }
+}
+
+/// A poll. Votes are stored per participant so a second vote replaces the
+/// first, but only totals ever leave the server.
+pub struct Poll {
+    pub id: Uuid,
+    pub question: String,
+    pub options: Vec<String>,
+    pub votes: HashMap<ParticipantId, usize>,
+    pub open: bool,
+    pub created_at: u64,
+}
+
+impl Poll {
+    pub fn view(&self) -> PollView {
+        let mut counts = vec![0u32; self.options.len()];
+        for choice in self.votes.values() {
+            if let Some(slot) = counts.get_mut(*choice) {
+                *slot += 1;
+            }
+        }
+        PollView {
+            id: self.id,
+            question: self.question.clone(),
+            options: self.options.clone(),
+            total: self.votes.len() as u32,
+            counts,
+            open: self.open,
+            created_at: self.created_at,
+        }
+    }
+}
+
 pub struct Room {
     pub id: String,
     pub name: String,
@@ -65,6 +182,8 @@ pub struct Room {
     pub started_at: u64,
     pub participants: HashMap<ParticipantId, Participant>,
     chat: VecDeque<ChatMessage>,
+    pub board: Board,
+    pub polls: Vec<Poll>,
 }
 
 impl Room {
@@ -76,6 +195,10 @@ impl Room {
             started_at: now_millis(),
             participants: HashMap::new(),
             chat: VecDeque::new(),
+            // A classroom board starts locked: thirty people drawing at once
+            // is not a lesson. Any other room starts open.
+            board: Board { locked: classroom, ..Board::default() },
+            polls: Vec::new(),
         }
     }
 
@@ -91,7 +214,46 @@ impl Room {
             classroom: self.classroom,
             participants,
             chat: self.chat.iter().cloned().collect(),
+            board: self.board.view(),
+            polls: self.polls.iter().map(Poll::view).collect(),
         }
+    }
+
+    /// Validates and stores a poll. Returns the stored view, or the reason it
+    /// was refused.
+    pub fn add_poll(
+        &mut self,
+        question: String,
+        options: Vec<String>,
+    ) -> Result<PollView, &'static str> {
+        let question = question.trim().to_string();
+        if question.is_empty() || question.chars().count() > MAX_QUESTION_LEN {
+            return Err("A poll needs a question of 200 characters or fewer.");
+        }
+        let options: Vec<String> = options
+            .into_iter()
+            .map(|o| o.trim().to_string())
+            .filter(|o| !o.is_empty())
+            .map(|o| o.chars().take(MAX_OPTION_LEN).collect())
+            .collect();
+        if options.len() < MIN_OPTIONS || options.len() > MAX_OPTIONS {
+            return Err("A poll needs between two and six options.");
+        }
+        if self.polls.len() >= MAX_POLLS {
+            return Err("This room already has the maximum number of polls.");
+        }
+
+        let poll = Poll {
+            id: Uuid::new_v4(),
+            question,
+            options,
+            votes: HashMap::new(),
+            open: true,
+            created_at: now_millis(),
+        };
+        let view = poll.view();
+        self.polls.push(poll);
+        Ok(view)
     }
 
     pub fn push_chat(&mut self, message: ChatMessage) {

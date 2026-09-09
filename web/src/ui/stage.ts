@@ -39,6 +39,8 @@ export class Stage {
   private selfId: ParticipantId | null = null;
   private speaking = new Set<ParticipantId>();
   private spotlightKey: string | null = null;
+  /** Set while the whiteboard owns the stage. */
+  private presentation: HTMLElement | null = null;
   private resizeObserver: ResizeObserver;
 
   constructor(private readonly options: StageOptions) {
@@ -73,6 +75,16 @@ export class Stage {
 
   setSelf(id: ParticipantId): void {
     this.selfId = id;
+  }
+
+  /**
+   * Puts a surface on the stage in place of the grid — today the whiteboard.
+   * It takes priority over a shared screen: somebody opened it deliberately,
+   * and two things cannot both be the main thing.
+   */
+  setPresentation(node: HTMLElement | null): void {
+    this.presentation = node;
+    this.render();
   }
 
   /** Applies a new participant list, adding and removing tiles as needed. */
@@ -212,6 +224,21 @@ export class Stage {
 
   private render(): void {
     const spotlight = this.spotlightKey ? this.tiles.get(this.spotlightKey) : null;
+
+    if (this.presentation) {
+      this.emptyState.remove();
+      this.grid.style.removeProperty("max-width");
+      this.grid.style.removeProperty("margin");
+      this.root.classList.add("stage--spotlight");
+      const strip = this.orderedTiles();
+      this.filmstrip.replaceChildren(...strip.map((t) => t.root));
+      this.filmstrip.hidden = strip.length === 0;
+      this.grid.replaceChildren(this.presentation, this.filmstrip);
+      this.grid.style.setProperty("--cols", "1");
+      this.grid.style.removeProperty("--tile-w");
+      this.grid.style.removeProperty("--tile-h");
+      return;
+    }
 
     if (this.participants.length <= 1 && !spotlight) {
       // Alone in the room: the self tile plus a state that says what to do.

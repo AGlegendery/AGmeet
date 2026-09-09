@@ -754,3 +754,309 @@
     font: var(--t-title);
   }
 }
+
+/* ==========================================================================
+   Whiteboard
+   --------------------------------------------------------------------------
+   A dark board with light ink. A white canvas would punch a hole in the
+   product; this belongs to the same surface as everything else, and light
+   strokes on it stay legible next to the video tiles.
+   ========================================================================== */
+
+.board {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: linear-gradient(160deg, #0d0f1c, #090b15);
+  border: 1px solid var(--glass-2-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--edge-light), var(--shadow-2);
+}
+
+/* A faint dot grid: enough to judge scale and keep lines honest, far too
+   quiet to compete with the ink. */
+.board::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(226, 231, 255, 0.075) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+.board__canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none; /* the board owns the gesture, not the scroller */
+}
+
+.board__canvas.is-readonly {
+  cursor: default;
+}
+
+.board__toolbar {
+  position: absolute;
+  top: var(--s-4);
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - var(--s-8));
+  padding: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-radius: var(--r-pill);
+  transform: translateX(-50%);
+}
+
+.board__toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.board__toolbar.is-readonly {
+  opacity: 0.75;
+}
+
+.board__divider {
+  width: 1px;
+  height: 22px;
+  flex: none;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.board__moderator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.board__swatch {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-pill);
+  transition: transform var(--m-fast) var(--ease-out),
+    box-shadow var(--m-fast) var(--ease-state);
+}
+
+.board__swatch::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: var(--ink);
+  border-radius: 50%;
+  box-shadow: var(--edge-light);
+  transition: inset var(--m-fast) var(--ease-out);
+}
+
+.board__swatch:hover:not(:disabled)::after {
+  inset: 4px;
+}
+
+.board__swatch.is-active {
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+.board__swatch.is-active::after {
+  inset: 6px;
+}
+
+.board__size {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--r-sm);
+  transition: background var(--m-fast) var(--ease-state);
+}
+
+.board__size span {
+  display: block;
+  background: var(--text-2);
+  border-radius: 50%;
+}
+
+.board__size:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.board__size[aria-pressed="true"] {
+  background: rgba(123, 108, 255, 0.18);
+}
+
+.board__size[aria-pressed="true"] span {
+  background: var(--accent-bright);
+}
+
+.board__readonly {
+  position: absolute;
+  bottom: var(--s-4);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  font: var(--t-caption);
+  color: var(--text-2);
+  background: var(--glass-3-bg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-3-border);
+  border-radius: var(--r-pill);
+  transform: translateX(-50%);
+}
+
+@media (max-width: 720px) {
+  .board__toolbar {
+    top: var(--s-2);
+    gap: 4px;
+    max-width: calc(100% - var(--s-4));
+  }
+
+  .board__swatch {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* ==========================================================================
+   Polls
+   ========================================================================== */
+
+.polls {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--s-3);
+}
+
+/* Separated by a rule rather than boxed: a list of polls does not need a
+   stack of cards to be legible. */
+.poll {
+  padding: var(--s-4) var(--s-2) var(--s-5);
+  border-bottom: 1px solid var(--glass-1-border);
+  animation: msg-in var(--m-base) var(--ease-out) both;
+}
+
+.poll:last-child {
+  border-bottom: none;
+}
+
+.poll__question {
+  font: var(--t-heading);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.poll__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--s-3) 0;
+}
+
+.poll__option {
+  padding: 10px var(--s-4);
+  font: var(--t-label);
+  color: var(--text-2);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-2-border);
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state), border-color var(--m-fast) var(--ease-state),
+    transform var(--m-fast) var(--ease-state);
+}
+
+.poll__option:hover {
+  color: var(--text-1);
+  background: rgba(123, 108, 255, 0.14);
+  border-color: rgba(123, 108, 255, 0.34);
+}
+
+.poll__option:active {
+  transform: translateY(1px);
+}
+
+.poll__result {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px var(--s-4);
+  overflow: hidden;
+  font: var(--t-label);
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: var(--r-md);
+}
+
+/* The bar is the fill, not a separate track: one shape, no chrome. */
+.poll__bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--share, 0%);
+  background: linear-gradient(90deg, rgba(123, 108, 255, 0.32), rgba(123, 108, 255, 0.18));
+  transition: width var(--m-slow) var(--ease-out);
+}
+
+.poll__result.is-mine {
+  color: var(--text-1);
+  box-shadow: inset 0 0 0 1px rgba(123, 108, 255, 0.4);
+}
+
+.poll__result.is-mine .poll__bar {
+  background: linear-gradient(90deg, rgba(123, 108, 255, 0.5), rgba(123, 108, 255, 0.28));
+}
+
+.poll__result-label {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.poll__share {
+  position: relative;
+  flex: none;
+  color: var(--text-1);
+}
+
+.poll__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.polls__foot {
+  padding: var(--s-3);
+  border-top: 1px solid var(--glass-1-border);
+}
+
+.poll-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-lg);
+}
+
+.poll-composer .input {
+  height: 38px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poll__bar {
+    transition: none;
+  }
+}

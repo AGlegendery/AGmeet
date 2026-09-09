@@ -25,15 +25,18 @@ import { PeerMesh } from "./rtc";
 import { Signaling } from "./signaling";
 import type {
   ConnectionState,
+  PollView,
   ModAction,
   Participant,
   ParticipantId,
   Role,
   RoomView,
 } from "./types";
+import { buildBoard } from "./ui/board";
 import { buildDock } from "./ui/dock";
 import { buildLobby, type LobbyResult } from "./ui/lobby";
 import { buildPanel } from "./ui/panel";
+import { buildPolls } from "./ui/polls";
 import { buildHeader, buildSidebar } from "./ui/shell";
 import { Stage } from "./ui/stage";
 import { toast } from "./ui/toast";
@@ -62,6 +65,7 @@ function startMeeting(config: LobbyResult): void {
   let micOn = config.mic;
   let camOn = config.cam;
   let handUp = false;
+  let boardOpen = false;
 
   const remoteAudio = new Map<ParticipantId, HTMLAudioElement>();
   const audioHost = el("div", { "aria-hidden": "true", style: "display:none" });
@@ -89,14 +93,33 @@ function startMeeting(config: LobbyResult): void {
     () => void copyInvite(),
     () => togglePanel()
   );
-  const panel = buildPanel({
-    onSend: (body) => signaling.send({ t: "chat", body }),
-    onModerate: (target, action) => moderate(target, action),
+  const board = buildBoard({
+    onDraw: (id, colour, width, erase, points) =>
+      signaling.send({ t: "draw", id, color: colour, width, erase, points }),
+    onUndo: (id) => signaling.send({ t: "undo", id }),
+    onClear: () => signaling.send({ t: "boardClear" }),
+    onLock: (locked) => signaling.send({ t: "boardLock", locked }),
+    onClose: () => signaling.send({ t: "boardOpen", open: false }),
   });
+
+  const polls = buildPolls({
+    onCreate: (question, options) => signaling.send({ t: "pollCreate", question, options }),
+    onVote: (poll, option) => signaling.send({ t: "pollVote", poll, option }),
+    onClose: (poll) => signaling.send({ t: "pollClose", poll }),
+  });
+
+  const panel = buildPanel(
+    {
+      onSend: (body) => signaling.send({ t: "chat", body }),
+      onModerate: (target, action) => moderate(target, action),
+    },
+    polls.root
+  );
   const dock = buildDock({
     onToggleMic: () => toggleMic(),
     onToggleCam: () => toggleCam(),
     onToggleScreen: () => void toggleScreen(),
+    onToggleBoard: () => toggleBoard(),
     onToggleHand: () => toggleHand(),
     onReaction: (kind) => signaling.send({ t: "reaction", kind }),
     onLeave: () => leave(),
@@ -119,7 +142,7 @@ function startMeeting(config: LobbyResult): void {
   app.replaceChildren(shell);
 
   dock.setScreenAvailable(typeof navigator.mediaDevices?.getDisplayMedia === "function");
-  dock.setState({ mic: micOn, cam: camOn, screen: false, hand: false });
+  dock.setState({ mic: micOn, cam: camOn, screen: false, hand: false, board: false });
 
   function togglePanel(): void {
     const open = shell.dataset.panel === "open";
@@ -193,6 +216,11 @@ function startMeeting(config: LobbyResult): void {
         applyRoom(message.room);
         stage.setStream(selfId, "camera", camOn ? localStream : null);
         panel.setHistory(message.room.chat, selfId);
+        board.setStrokes(message.room.board.strokes);
+        board.setLocked(message.room.board.locked);
+        applyBoardOpen(message.room.board.open);
+        polls.setPolls(message.room.polls);
+        panel.setPollCount(message.room.polls.length);
         // Existing peers send the offers; open the connections and wait.
         for (const participant of message.room.participants) {
           if (participant.id !== selfId) void mesh.connect(participant.id, false);
@@ -264,6 +292,34 @@ function startMeeting(config: LobbyResult): void {
         handleModerated(message.action, message.by);
         break;
 
+      case "draw":
+        board.applyDraw(message.id, message.color, message.width, message.erase, message.points);
+        break;
+
+      case "undone":
+        board.applyUndo(message.id);
+        break;
+
+      case "boardCleared": {
+        board.clear();
+        const actor = participants.find((p) => p.id === message.by)?.name;
+        if (message.by !== selfId && actor) toast(`${actor} cleared the board`);
+        break;
+      }
+
+      case "boardOpen":
+        applyBoardOpen(message.open);
+        break;
+
+      case "boardLock":
+        board.setLocked(message.locked);
+        toast(message.locked ? "The board is locked" : "Anyone can draw on the board");
+        break;
+
+      case "poll":
+        applyPoll(message.poll);
+        break;
+
       case "error":
         toast(message.message, "error");
         break;
@@ -288,7 +344,48 @@ function startMeeting(config: LobbyResult): void {
     stage.setParticipants(participants);
     header.setCount(participants.length);
     panel.setParticipants(participants, selfId, selfRole, (id) => stage.isSpeaking(id));
+
+    // Moderation rights can change mid-meeting, so the tools that depend on
+    // them are refreshed here rather than only at join.
+    const canModerate = selfRole === "host" || selfRole === "moderator";
+    board.setCanModerate(canModerate);
+    polls.setCanModerate(canModerate);
+    dock.setBoardAvailable(canModerate);
   }
+
+  // ----------------------------------------------------------------- board
+  function applyBoardOpen(open: boolean): void {
+    boardOpen = open;
+    stage.setPresentation(open ? board.root : null);
+    if (open) board.resize();
+    dock.setState({
+      mic: micOn,
+      cam: camOn,
+      screen: screenStream !== null,
+      hand: handUp,
+      board: boardOpen,
+    });
+  }
+
+  function toggleBoard(): void {
+    // Only a moderator can put the board on everyone's stage; the control is
+    // disabled for everyone else, so this is belt and braces.
+    if (selfRole !== "host" && selfRole !== "moderator") return;
+    signaling.send({ t: "boardOpen", open: !boardOpen });
+  }
+
+  // ----------------------------------------------------------------- polls
+  function applyPoll(poll: PollView): void {
+    const isNew = polls.count() === 0 || !seenPolls.has(poll.id);
+    seenPolls.add(poll.id);
+    polls.upsert(poll);
+    panel.setPollCount(polls.count());
+    if (isNew && poll.open) {
+      toast("A new poll is open");
+      panel.unreadBump();
+    }
+  }
+  const seenPolls = new Set<string>();
 
   function publishMedia(): void {
     signaling.updateJoinState(micOn, camOn);
@@ -307,7 +404,13 @@ function startMeeting(config: LobbyResult): void {
         : p
     );
     applyParticipants();
-    dock.setState({ mic: micOn, cam: camOn, screen: screenStream !== null, hand: handUp });
+    dock.setState({
+      mic: micOn,
+      cam: camOn,
+      screen: screenStream !== null,
+      hand: handUp,
+      board: boardOpen,
+    });
   }
 
   // ----------------------------------------------------------------- media
@@ -497,6 +600,15 @@ function startMeeting(config: LobbyResult): void {
         shell.dataset.panel = "open";
         panel.showTab("people");
         break;
+      case "o":
+        event.preventDefault();
+        shell.dataset.panel = "open";
+        panel.showTab("polls");
+        break;
+      case "b":
+        event.preventDefault();
+        toggleBoard();
+        break;
       default:
         break;
     }
@@ -509,6 +621,7 @@ function startMeeting(config: LobbyResult): void {
     window.clearInterval(clockTimer);
     document.removeEventListener("keydown", onKeydown);
     localDetector.detach();
+    board.destroy();
     mesh.destroy();
     signaling.close();
     stopStream(localStream);

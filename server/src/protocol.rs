@@ -62,6 +62,47 @@ pub struct ChatMessage {
     pub at: u64,
 }
 
+/// One pen stroke on the whiteboard.
+///
+/// Points are normalised to 0..1 against the board's own box, so a stroke
+/// drawn on a phone lands in the same place on a projector. Colour and width
+/// are indices into fixed palettes rather than free values, which keeps the
+/// wire small and stops a client inventing an unreadable colour.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stroke {
+    pub id: Uuid,
+    pub color: u8,
+    pub width: u8,
+    #[serde(default)]
+    pub erase: bool,
+    pub points: Vec<[f32; 2]>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardView {
+    /// Whether the board currently owns the stage.
+    pub open: bool,
+    /// When locked, only the host and moderators may draw.
+    pub locked: bool,
+    pub strokes: Vec<Stroke>,
+}
+
+/// Votes are counted, never attributed: the room sees totals and nobody sees
+/// who chose what. A classroom poll people are afraid to answer is worthless.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PollView {
+    pub id: Uuid,
+    pub question: String,
+    pub options: Vec<String>,
+    pub counts: Vec<u32>,
+    pub total: u32,
+    pub open: bool,
+    pub created_at: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomView {
@@ -72,6 +113,8 @@ pub struct RoomView {
     pub classroom: bool,
     pub participants: Vec<ParticipantView>,
     pub chat: Vec<ChatMessage>,
+    pub board: BoardView,
+    pub polls: Vec<PollView>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -109,6 +152,30 @@ pub enum ClientMessage {
     Media { #[serde(flatten)] state: MediaState },
     Reaction { kind: String },
     Moderate { target: ParticipantId, action: ModAction },
+
+    /// Appends points to a stroke, creating it on first sight. Sent while the
+    /// pointer moves so other people watch the line being drawn rather than
+    /// waiting for it to appear finished.
+    Draw {
+        id: Uuid,
+        color: u8,
+        width: u8,
+        #[serde(default)]
+        erase: bool,
+        points: Vec<[f32; 2]>,
+    },
+    /// Removes the sender's own stroke. Anyone may undo their own work; only
+    /// a moderator can clear the board.
+    Undo { id: Uuid },
+    BoardClear,
+    /// Moderators put the board on the stage and control who may draw.
+    BoardOpen { open: bool },
+    BoardLock { locked: bool },
+
+    PollCreate { question: String, options: Vec<String> },
+    PollVote { poll: Uuid, option: usize },
+    PollClose { poll: Uuid },
+
     /// Keeps intermediaries from closing an idle socket.
     Ping,
 }
@@ -143,6 +210,23 @@ pub enum ServerMessage {
     RoleChanged { id: ParticipantId, role: Role },
     /// Directed at one participant by a moderator.
     Moderated { by: ParticipantId, action: ModAction },
+
+    Draw {
+        from: ParticipantId,
+        id: Uuid,
+        color: u8,
+        width: u8,
+        erase: bool,
+        points: Vec<[f32; 2]>,
+    },
+    Undone { id: Uuid },
+    BoardCleared { by: ParticipantId },
+    BoardOpen { open: bool },
+    BoardLock { locked: bool },
+
+    /// Sent whenever a poll is created, voted on, or closed. Carries the whole
+    /// poll so a client never has to reconcile a partial update.
+    Poll { poll: PollView },
     /// Recoverable problem; the socket stays open.
     Error { message: String },
     Pong,

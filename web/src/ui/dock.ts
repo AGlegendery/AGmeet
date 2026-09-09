@@ -15,12 +15,14 @@ export interface DockState {
   cam: boolean;
   screen: boolean;
   hand: boolean;
+  board: boolean;
 }
 
 export interface DockHandlers {
   onToggleMic: () => void;
   onToggleCam: () => void;
   onToggleScreen: () => void;
+  onToggleBoard: () => void;
   onToggleHand: () => void;
   onReaction: (kind: string) => void;
   onLeave: () => void;
@@ -30,6 +32,7 @@ export interface DockHandles {
   root: HTMLElement;
   setState: (state: DockState) => void;
   setScreenAvailable: (available: boolean) => void;
+  setBoardAvailable: (available: boolean) => void;
 }
 
 function control(
@@ -54,6 +57,7 @@ export function buildDock(handlers: DockHandlers): DockHandles {
   const mic = control("Microphone", icons.mic, handlers.onToggleMic);
   const cam = control("Camera", icons.camera, handlers.onToggleCam);
   const screen = control("Share screen", icons.screen, handlers.onToggleScreen, { pressed: false });
+  const board = control("Whiteboard", icons.board, handlers.onToggleBoard, { pressed: false });
   const hand = control("Raise hand", icons.hand, handlers.onToggleHand, { pressed: false });
 
   // --- Reactions ---------------------------------------------------------
@@ -147,6 +151,7 @@ export function buildDock(handlers: DockHandlers): DockHandles {
     mic,
     cam,
     screen,
+    board,
     el("span", { class: "dock__divider", "aria-hidden": "true" }),
     hand,
     el("span", { style: "position:relative;display:inline-flex" }, [reactions, reactionMenu]),
@@ -180,6 +185,10 @@ export function buildDock(handlers: DockHandlers): DockHandles {
       screen.setAttribute("data-tip", state.screen ? "Stop sharing" : "Share screen");
       screen.setAttribute("aria-label", state.screen ? "Stop sharing screen" : "Share screen");
 
+      board.setAttribute("aria-pressed", String(state.board));
+      board.setAttribute("data-tip", state.board ? "Close the whiteboard" : "Whiteboard");
+      board.setAttribute("aria-label", state.board ? "Close the whiteboard" : "Open the whiteboard");
+
       hand.setAttribute("aria-pressed", String(state.hand));
       hand.setAttribute("data-tip", state.hand ? "Lower hand" : "Raise hand");
       hand.setAttribute("aria-label", state.hand ? "Lower hand" : "Raise hand");
@@ -188,6 +197,14 @@ export function buildDock(handlers: DockHandlers): DockHandles {
       screen.disabled = !available;
       if (!available) {
         screen.setAttribute("data-tip", "Screen sharing needs a desktop browser");
+      }
+    },
+    setBoardAvailable(available) {
+      // Opening the board for everyone is a moderator action; the control is
+      // disabled rather than hidden so its absence is never a mystery.
+      board.disabled = !available;
+      if (!available) {
+        board.setAttribute("data-tip", "Only the host can open the whiteboard");
       }
     },
   };

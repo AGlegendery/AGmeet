@@ -24,6 +24,15 @@ const MAX_CHAT_LEN: usize = 2000;
 /// each one as a specific icon, and an unknown value would render as nothing.
 const REACTIONS: [&str; 6] = ["thumbsup", "clap", "heart", "smile", "surprised", "question"];
 
+/// Points accepted in a single draw frame. The client sends a few points per
+/// pointer move; anything far above that is not a person drawing.
+const MAX_POINTS_PER_FRAME: usize = 256;
+
+/// Palette and pen sizes are fixed on both sides, so an index outside them is
+/// a malformed client rather than a preference.
+const PALETTE_LEN: u8 = 8;
+const PEN_SIZES: u8 = 4;
+
 pub async fn upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     ws.on_upgrade(move |socket| connection(socket, state))
 }
@@ -219,6 +228,125 @@ async fn handle(
 
         ClientMessage::Moderate { target, action } => {
             moderate(state, room_id, id, target, action).await;
+            true
+        }
+
+        // ------------------------------------------------------------ board
+        ClientMessage::Draw { id: stroke, color, width, erase, points } => {
+            if color >= PALETTE_LEN || width >= PEN_SIZES || points.is_empty() {
+                return true;
+            }
+            let points: Vec<[f32; 2]> = points
+                .into_iter()
+                .take(MAX_POINTS_PER_FRAME)
+                // Coordinates are normalised; anything outside the board is a
+                // bug or an attempt to grow the buffer with junk.
+                .filter(|[x, y]| x.is_finite() && y.is_finite() && (-0.05..=1.05).contains(x) && (-0.05..=1.05).contains(y))
+                .collect();
+            if points.is_empty() {
+                return true;
+            }
+
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            let Some(role) = room.participants.get(&id).map(|p| p.role) else { return true };
+            if room.board.locked && !role.can_moderate() {
+                return true;
+            }
+            if !room.board.append(id, stroke, color, width, erase, points.clone()) {
+                return true;
+            }
+            // Only to other people: the drawer already has the ink on screen,
+            // and echoing it back would make their own line lag their pointer.
+            room.broadcast_except(
+                id,
+                &ServerMessage::Draw { from: id, id: stroke, color, width, erase, points },
+            );
+            true
+        }
+
+        ClientMessage::Undo { id: stroke } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if room.board.undo(id, stroke) {
+                room.broadcast(&ServerMessage::Undone { id: stroke });
+            }
+            true
+        }
+
+        ClientMessage::BoardClear => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+                return true;
+            }
+            room.board.clear();
+            room.broadcast(&ServerMessage::BoardCleared { by: id });
+            true
+        }
+
+        ClientMessage::BoardOpen { open } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+                return true;
+            }
+            room.board.open = open;
+            room.broadcast(&ServerMessage::BoardOpen { open });
+            true
+        }
+
+        ClientMessage::BoardLock { locked } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+                return true;
+            }
+            room.board.locked = locked;
+            room.broadcast(&ServerMessage::BoardLock { locked });
+            true
+        }
+
+        // ------------------------------------------------------------ polls
+        ClientMessage::PollCreate { question, options } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+                return true;
+            }
+            match room.add_poll(question, options) {
+                Ok(poll) => room.broadcast(&ServerMessage::Poll { poll }),
+                Err(message) => {
+                    room.send_to(id, ServerMessage::Error { message: message.into() });
+                }
+            }
+            true
+        }
+
+        ClientMessage::PollVote { poll: poll_id, option } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            let Some(poll) = room.polls.iter_mut().find(|p| p.id == poll_id) else { return true };
+            if !poll.open || option >= poll.options.len() {
+                return true;
+            }
+            // Re-voting replaces the previous choice rather than adding one.
+            poll.votes.insert(id, option);
+            let view = poll.view();
+            room.broadcast(&ServerMessage::Poll { poll: view });
+            true
+        }
+
+        ClientMessage::PollClose { poll: poll_id } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+                return true;
+            }
+            let Some(poll) = room.polls.iter_mut().find(|p| p.id == poll_id) else { return true };
+            poll.open = false;
+            let view = poll.view();
+            room.broadcast(&ServerMessage::Poll { poll: view });
             true
         }
     }

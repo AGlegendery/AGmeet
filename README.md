@@ -9,6 +9,8 @@ lets it run on a small VPS and start in milliseconds.
 - **No frontend framework** — ~15 KB of JavaScript over the wire, gzipped.
 - **Peer-to-peer media** — the server never sees or forwards a video frame.
 - **Nothing to install** — participants open a link.
+- **Classroom tools** — a shared whiteboard and anonymous polls, in the same
+  design system as everything else.
 
 ## Quick start
 
@@ -109,6 +111,8 @@ that would slot in.
 | <kbd>H</kbd> | Raise or lower hand |
 | <kbd>C</kbd> | Chat |
 | <kbd>P</kbd> | Participants |
+| <kbd>O</kbd> | Polls |
+| <kbd>B</kbd> | Whiteboard (hosts and moderators) |
 | <kbd>Esc</kbd> | Close the open menu |
 
 Keys are ignored while a text field has focus.
@@ -128,7 +132,9 @@ somewhere other than `http://127.0.0.1:8080`, and `CHROMIUM_PATH` to use a
 Chromium that is already on the machine instead of downloading one.
 
 `meeting.test.mjs` covers joining, peer-to-peer video, chat, media state,
-moderation, the adaptive grid and the mobile layout. `accessibility.test.mjs`
+moderation, the adaptive grid and the mobile layout. `classroom.test.mjs`
+covers the whiteboard and polls, reading the canvas pixels on the receiving
+side to prove ink actually crossed the wire. `accessibility.test.mjs`
 composites every glass layer to check text contrast against WCAG AA, and
 verifies that every control is keyboard reachable and named.
 
@@ -143,7 +149,7 @@ web/             TypeScript client, no framework
   src/rtc.ts       the peer mesh
   src/media.ts     devices, screen capture, speech detection
   src/styles/      the design system, tokens first
-  src/ui/          stage, dock, panel, lobby, shell
+  src/ui/          stage, dock, panel, lobby, shell, board, polls
 tests/           browser tests
 docs/            architecture and design notes
 ```

@@ -17,6 +17,7 @@ export interface PanelHandlers {
 
 export interface PanelHandles {
   root: HTMLElement;
+  setPollCount: (count: number) => void;
   addMessage: (message: ChatMessage, selfId: ParticipantId) => void;
   setHistory: (messages: ChatMessage[], selfId: ParticipantId) => void;
   setParticipants: (
@@ -25,13 +26,13 @@ export interface PanelHandles {
     selfRole: Role,
     speaking: (id: ParticipantId) => boolean
   ) => void;
-  showTab: (tab: "chat" | "people") => void;
+  showTab: (tab: "chat" | "people" | "polls") => void;
   unreadBump: () => void;
 }
 
 const ROLE_LABEL: Record<Role, string> = { host: "Host", moderator: "Moderator", guest: "" };
 
-export function buildPanel(handlers: PanelHandlers): PanelHandles {
+export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): PanelHandles {
   // --- Chat --------------------------------------------------------------
   const messages = el("div", { class: "chat scroll", role: "log", "aria-label": "Chat messages" });
   const chatEmpty = el("div", { class: "state" }, [
@@ -107,6 +108,8 @@ export function buildPanel(handlers: PanelHandlers): PanelHandles {
   const chatCount = el("span", { class: "tab__count", text: "" });
   const peopleCount = el("span", { class: "tab__count", text: "1" });
 
+  const pollCount = el("span", { class: "tab__count", text: "" });
+
   const chatTab = el("button", { class: "tab", type: "button", role: "tab", "aria-selected": "true" }, [
     el("span", { text: "Chat" }),
     chatCount,
@@ -115,16 +118,24 @@ export function buildPanel(handlers: PanelHandlers): PanelHandles {
     el("span", { text: "People" }),
     peopleCount,
   ]);
+  const pollsTab = el("button", { class: "tab", type: "button", role: "tab", "aria-selected": "false" }, [
+    el("span", { text: "Polls" }),
+    pollCount,
+  ]);
 
   let unread = 0;
-  let active: "chat" | "people" = "chat";
+  let active: "chat" | "people" | "polls" = "chat";
 
-  function showTab(tab: "chat" | "people"): void {
+  function showTab(tab: "chat" | "people" | "polls"): void {
     active = tab;
-    chatTab.setAttribute("aria-selected", String(tab === "chat"));
-    peopleTab.setAttribute("aria-selected", String(tab === "people"));
-    chatView.setAttribute("aria-hidden", String(tab !== "chat"));
-    peopleView.setAttribute("aria-hidden", String(tab !== "people"));
+    for (const [button, view, name] of [
+      [chatTab, chatView, "chat"],
+      [peopleTab, peopleView, "people"],
+      [pollsTab, pollsView, "polls"],
+    ] as const) {
+      button.setAttribute("aria-selected", String(tab === name));
+      view.setAttribute("aria-hidden", String(tab !== name));
+    }
     if (tab === "chat") {
       unread = 0;
       chatCount.textContent = "";
@@ -134,10 +145,11 @@ export function buildPanel(handlers: PanelHandlers): PanelHandles {
 
   chatTab.addEventListener("click", () => showTab("chat"));
   peopleTab.addEventListener("click", () => showTab("people"));
+  pollsTab.addEventListener("click", () => showTab("polls"));
 
   const root = el("aside", { class: "panel glass-2", "aria-label": "Meeting context" }, [
-    el("div", { class: "panel__tabs", role: "tablist" }, [chatTab, peopleTab]),
-    el("div", { class: "panel__body" }, [chatView, peopleView]),
+    el("div", { class: "panel__tabs", role: "tablist" }, [chatTab, peopleTab, pollsTab]),
+    el("div", { class: "panel__body" }, [chatView, peopleView, pollsView]),
   ]);
 
   // --- Message rendering -------------------------------------------------
@@ -342,6 +354,9 @@ export function buildPanel(handlers: PanelHandlers): PanelHandles {
       );
     },
     showTab,
+    setPollCount(count) {
+      pollCount.textContent = count > 0 ? String(count) : "";
+    },
     unreadBump() {
       if (active !== "chat") {
         unread += 1;

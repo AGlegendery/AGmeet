@@ -100,6 +100,56 @@ off the bottom behind the dock.
 The tiles then lay out as a wrapping flex row, which centres a trailing
 partial row — a grid would leave a hole beside the last tile.
 
+## The whiteboard
+
+`web/src/ui/board.ts`, `server/src/room.rs`.
+
+Strokes travel over the same WebSocket as everything else, not over WebRTC
+data channels. In a mesh a data channel would mean sending every stroke N
+times and reconciling N arrival orders; through the server there is one
+ordering, one buffer, and a late joiner gets the board by asking for it.
+
+**Every coordinate is normalised to 0..1** against the board's own box before
+it is sent. Nothing on the wire is in pixels. A stroke drawn on a phone lands
+in the same place on a projector, and resizing the window reflows the drawing
+rather than cropping it.
+
+Points are sent while the pointer moves, batched one frame at a time, so
+other people watch a line being drawn instead of waiting for it to appear
+finished. The drawer is excluded from that broadcast: they already have the
+ink on screen, and echoing it back would make their own line lag the pointer.
+
+Three rules keep a shared append-only buffer safe:
+
+- Strokes are owned. Appending to a stroke id somebody else created is
+  refused, so a client cannot extend another participant's line by guessing
+  an id, and undo only ever removes your own work.
+- Everything is bounded — strokes per room, points per stroke, points per
+  frame — and the oldest stroke is dropped rather than the board refusing to
+  work.
+- Colour and width are indices into fixed palettes, not free values. The wire
+  stays small and a client cannot invent an unreadable colour.
+
+A classroom board starts **locked**, so only the teacher draws until they
+open it; any other room starts unlocked. Thirty people drawing at once is not
+a lesson.
+
+Erasing uses `destination-out` rather than painting the background colour.
+The board is translucent over the stage, so a background-coloured stroke
+would show as a smear.
+
+## Polls
+
+Votes are stored per participant so a second vote replaces the first, but
+**only totals ever leave the server**. Nobody — including the host — can see
+who chose what. A classroom poll people are afraid to answer tells you
+nothing.
+
+Participants see the tally only after they answer, or once the poll closes:
+showing it first would steer the vote. Moderators see it immediately, because
+they are running the poll, and making a teacher vote in their own question to
+read the room is absurd.
+
 ## Moderation is advisory where it has to be
 
 The server cannot switch off a microphone it has no connection to, so it does
@@ -135,8 +185,9 @@ paying nothing for capacity it does not use.
 - **No accounts.** Room codes are the access control. Anyone with the code and
   the address can join. Put it behind your own authentication if that is not
   enough.
-- **No persistence.** Nothing is written to disk. Chat lives in memory,
-  bounded to the last 200 messages per room, and is gone when the room empties.
+- **No persistence.** Nothing is written to disk. Chat, the whiteboard and
+  polls live in memory, each bounded, and all go when the room empties. An
+  export button on the board would be a reasonable first thing to add.
 - **No recording.** It would need a media server, which is the thing this
   design exists to avoid.
 - **No third-party services.** The only external dependency a deployment can

@@ -26,6 +26,30 @@ export interface ChatMessage {
   at: number;
 }
 
+export interface Stroke {
+  id: string;
+  color: number;
+  width: number;
+  erase: boolean;
+  points: [number, number][];
+}
+
+export interface BoardView {
+  open: boolean;
+  locked: boolean;
+  strokes: Stroke[];
+}
+
+export interface PollView {
+  id: string;
+  question: string;
+  options: string[];
+  counts: number[];
+  total: number;
+  open: boolean;
+  createdAt: number;
+}
+
 export interface RoomView {
   id: string;
   name: string;
@@ -33,6 +57,8 @@ export interface RoomView {
   classroom: boolean;
   participants: Participant[];
   chat: ChatMessage[];
+  board: BoardView;
+  polls: PollView[];
 }
 
 export type ModAction = "requestMute" | "remove" | "promoteModerator" | "demoteModerator";
@@ -44,6 +70,14 @@ export type ClientMessage =
   | ({ t: "media" } & MediaState)
   | { t: "reaction"; kind: string }
   | { t: "moderate"; target: ParticipantId; action: ModAction }
+  | { t: "draw"; id: string; color: number; width: number; erase: boolean; points: [number, number][] }
+  | { t: "undo"; id: string }
+  | { t: "boardClear" }
+  | { t: "boardOpen"; open: boolean }
+  | { t: "boardLock"; locked: boolean }
+  | { t: "pollCreate"; question: string; options: string[] }
+  | { t: "pollVote"; poll: string; option: number }
+  | { t: "pollClose"; poll: string }
   | { t: "ping" };
 
 export type ServerMessage =
@@ -56,6 +90,12 @@ export type ServerMessage =
   | { t: "reaction"; id: ParticipantId; kind: string }
   | { t: "roleChanged"; id: ParticipantId; role: Role }
   | { t: "moderated"; by: ParticipantId; action: ModAction }
+  | { t: "draw"; from: ParticipantId; id: string; color: number; width: number; erase: boolean; points: [number, number][] }
+  | { t: "undone"; id: string }
+  | { t: "boardCleared"; by: ParticipantId }
+  | { t: "boardOpen"; open: boolean }
+  | { t: "boardLock"; locked: boolean }
+  | { t: "poll"; poll: PollView }
   | { t: "error"; message: string }
   | { t: "pong" };
 
