@@ -1,0 +1,276 @@
+/* ==========================================================================
+   Application shell
+   --------------------------------------------------------------------------
+   Three columns on the desktop: room context, meeting stage, context panel.
+   The stage is the only column that grows; the other two are fixed so the
+   stage keeps the overwhelming share of the screen at every width.
+   ========================================================================== */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--panel-w);
+  height: 100dvh;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  transition: grid-template-columns var(--m-panel) var(--ease-out);
+}
+
+.app[data-panel="closed"] {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0px;
+}
+
+/* --- Sidebar --------------------------------------------------------------
+   A native desktop rail, not a web nav: small type, tight rows, the user
+   parked at the bottom. */
+.sidebar {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--s-6);
+  min-height: 0;
+  padding: var(--s-5) var(--s-4);
+  border-radius: var(--r-xl);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-2);
+}
+
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: var(--text-1);
+  background: linear-gradient(140deg, var(--accent), var(--accent-dim));
+  border-radius: 9px;
+  box-shadow: var(--edge-light), 0 4px 14px -4px rgba(123, 108, 255, 0.6);
+}
+
+.brand__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.brand__name {
+  font: var(--t-heading);
+  letter-spacing: -0.02em;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+
+.nav__label {
+  padding: 0 var(--s-2) var(--s-2);
+  font: var(--t-caption);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+/* --- Stage column --------------------------------------------------------- */
+
+.meeting {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--s-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+.room-header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  min-height: var(--header-h);
+  padding: var(--s-3) var(--s-5);
+  border-radius: var(--r-lg);
+}
+
+.room-header__id {
+  min-width: 0;
+}
+
+.room-header__name {
+  font: var(--t-title);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.room-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: 3px;
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.room-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: auto;
+}
+
+/* The stage itself. Everything else on screen defers to this. */
+.stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+
+/* --- Context panel --------------------------------------------------------
+   A secondary workspace. It never competes with the stage: same glass family,
+   one level shallower, and it collapses away entirely. */
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  transition: opacity var(--m-panel) var(--ease-out);
+}
+
+.app[data-panel="closed"] .panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel__tabs {
+  display: flex;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--glass-1-border);
+}
+
+.panel__body {
+  display: grid;
+  min-height: 0;
+}
+
+.panel__view {
+  display: grid;
+  grid-row: 1;
+  grid-column: 1;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.panel__view[aria-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   Responsive
+   --------------------------------------------------------------------------
+   The layout changes shape at each step rather than scaling down: the panel
+   becomes an overlay, then the sidebar becomes a rail, then the stage takes
+   the whole screen and everything else floats over it.
+   ========================================================================== */
+
+/* Laptop: the panel stops taking space from the stage and floats over it. */
+@media (max-width: 1180px) {
+  .app,
+  .app[data-panel="closed"] {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+
+  .panel {
+    position: absolute;
+    top: var(--s-3);
+    right: var(--s-3);
+    bottom: var(--s-3);
+    z-index: 30;
+    width: var(--panel-w);
+    max-width: calc(100vw - var(--s-6));
+    transition: transform var(--m-panel) var(--ease-out),
+      opacity var(--m-panel) var(--ease-out);
+  }
+
+  .app[data-panel="closed"] .panel {
+    transform: translateX(12px);
+  }
+}
+
+/* Tablet: the sidebar drops to an icon rail. */
+@media (max-width: 960px) {
+  :root {
+    --sidebar-w: 68px;
+  }
+
+  .app,
+  .app[data-panel="closed"] {
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  }
+
+  .brand__name,
+  .nav__label,
+  .nav__item span,
+  .account__id {
+    display: none;
+  }
+
+  .sidebar {
+    padding: var(--s-5) var(--s-2);
+  }
+
+  .brand,
+  .nav__item,
+  .account {
+    justify-content: center;
+  }
+}
+
+/* Mobile: stage first. Navigation leaves the screen, the header compresses,
+   and the panel takes the full viewport when opened. */
+@media (max-width: 720px) {
+  .app,
+  .app[data-panel="closed"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-2);
+    padding: var(--s-2);
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .room-header {
+    min-height: 52px;
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+  }
+
+  .room-header__actions .btn span {
+    display: none;
+  }
+
+  .stage {
+    border-radius: var(--r-lg);
+  }
+
+  .panel {
+    top: var(--s-2);
+    right: var(--s-2);
+    bottom: var(--s-2);
+    left: var(--s-2);
+    width: auto;
+    max-width: none;
+    border-radius: var(--r-lg);
+  }
+}

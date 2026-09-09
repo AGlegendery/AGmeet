@@ -1,0 +1,149 @@
+/* ==========================================================================
+   AGmeet design tokens
+   --------------------------------------------------------------------------
+   One source of truth for colour, depth, glass, shape, type and motion.
+   Screens compose these; they never invent their own values.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Ground ------------------------------------------------------------
+     Deep navy, never flat black: it gives the atmospheric gradients and the
+     glass surfaces something to sit in. */
+  --ground: #06070f;
+  --ground-deep: #04050b;
+  --ground-raised: #0b0d18;
+
+  /* --- Accent ------------------------------------------------------------
+     One family. Used for active, focus, selection and live states only, never
+     as a surface fill across large areas. */
+  --accent: #7b6cff;
+  --accent-bright: #9b8dff;
+  --accent-dim: #5a4de0;
+  --accent-cyan: #4cc9f0;
+  /* Reserved for genuine signal states: live, recording, leave. */
+  --signal: #ff5c7a;
+  --positive: #3ddc97;
+
+  /* --- Text --------------------------------------------------------------
+     Alphas are chosen so every level clears 4.5:1 on --ground-raised.
+     Anything quieter than --text-3 is decorative and must not carry meaning. */
+  --text-1: #f2f4ff;
+  --text-2: rgba(226, 231, 255, 0.66);
+  --text-3: rgba(226, 231, 255, 0.55);
+  /* Decorative only: placeholders and separators. Never carries meaning,
+     because it does not clear 4.5:1. */
+  --text-faint: rgba(226, 231, 255, 0.38);
+  --text-on-accent: #0a0716;
+
+  /* --- Glass -------------------------------------------------------------
+     Four depth levels. Each step comes closer to the viewer: lighter fill,
+     more blur, brighter edge, deeper shadow. Level is a property of the
+     element's role, not of how it happens to look. */
+  --glass-1-bg: rgba(255, 255, 255, 0.028);
+  --glass-1-border: rgba(255, 255, 255, 0.06);
+  --glass-1-blur: 20px;
+
+  --glass-2-bg: rgba(255, 255, 255, 0.045);
+  --glass-2-border: rgba(255, 255, 255, 0.085);
+  --glass-2-blur: 32px;
+
+  --glass-3-bg: rgba(17, 19, 34, 0.72);
+  --glass-3-border: rgba(255, 255, 255, 0.1);
+  --glass-3-blur: 40px;
+
+  --glass-4-bg: rgba(14, 16, 30, 0.82);
+  --glass-4-border: rgba(255, 255, 255, 0.13);
+  --glass-4-blur: 44px;
+
+  /* The 1px inner highlight along the top edge is what reads as refraction
+     rather than as a flat translucent rectangle. */
+  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 0.11);
+
+  /* --- Depth -------------------------------------------------------------
+     Shadows are tinted to the ground hue, never neutral black. */
+  --shadow-1: 0 2px 8px -2px rgba(3, 4, 14, 0.5);
+  --shadow-2: 0 12px 32px -12px rgba(3, 4, 14, 0.7);
+  --shadow-3: 0 24px 60px -20px rgba(3, 4, 14, 0.8);
+  --shadow-4: 0 32px 80px -24px rgba(3, 4, 14, 0.88);
+
+  /* Focus and active glow. Deliberately soft: it marks state, it does not
+     decorate. */
+  --glow-accent: 0 0 0 1px rgba(123, 108, 255, 0.5), 0 0 28px -6px rgba(123, 108, 255, 0.45);
+  --glow-signal: 0 0 0 1px rgba(255, 92, 122, 0.55), 0 0 24px -8px rgba(255, 92, 122, 0.5);
+
+  /* --- Shape -------------------------------------------------------------
+     Generous but graded. Pills are reserved for status and compact controls. */
+  --r-xl: 28px;
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 10px;
+  --r-xs: 8px;
+  --r-pill: 999px;
+
+  /* --- Space -------------------------------------------------------------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-14: 56px;
+  --s-18: 72px;
+
+  /* --- Type --------------------------------------------------------------
+     A native stack: SF Pro on macOS, Segoe UI Variable on Windows. It costs
+     nothing to download, renders like the host OS, and keeps the product
+     self-hostable with no font CDN. See README to bundle a webfont instead. */
+  --font-ui: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
+    "Segoe UI", system-ui, "Noto Sans", sans-serif;
+  --font-num: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", "Liberation Mono", monospace;
+
+  --t-display: 600 28px/1.15 var(--font-ui);
+  --t-title: 600 19px/1.25 var(--font-ui);
+  --t-heading: 600 15px/1.35 var(--font-ui);
+  --t-body: 400 14px/1.55 var(--font-ui);
+  --t-label: 500 13px/1.4 var(--font-ui);
+  --t-caption: 500 11.5px/1.35 var(--font-ui);
+
+  /* --- Motion ------------------------------------------------------------
+     Short and calm. Entrances decelerate; state changes are symmetric. */
+  --m-fast: 120ms;
+  --m-base: 180ms;
+  --m-slow: 280ms;
+  --m-panel: 320ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-state: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Structure ---------------------------------------------------------- */
+  --sidebar-w: 232px;
+  --panel-w: 336px;
+  --header-h: 68px;
+}
+
+/* Honour the OS setting rather than only trimming durations: anything that
+   loops forever is switched off, and transitions collapse to near-instant. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --m-fast: 1ms;
+    --m-base: 1ms;
+    --m-slow: 1ms;
+    --m-panel: 1ms;
+  }
+}
+
+/* Some browsers and low-power devices drop backdrop-filter. Without it the
+   translucent fills would let text sit on video, so the surfaces become
+   opaque instead of merely less blurred. */
+@supports not (backdrop-filter: blur(1px)) {
+  :root {
+    --glass-1-bg: rgba(18, 20, 34, 0.94);
+    --glass-2-bg: rgba(20, 22, 38, 0.95);
+    --glass-3-bg: rgba(17, 19, 34, 0.97);
+    --glass-4-bg: rgba(14, 16, 30, 0.98);
+  }
+}

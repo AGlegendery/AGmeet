@@ -1,0 +1,48 @@
+# Minimal self-hosted AGmeet.
+#
+# The server carries signalling only; video and audio go directly between
+# browsers. That is why there is no media service here and why this runs
+# comfortably on the smallest VPS.
+#
+# Two things to settle before this is reachable from the internet:
+#
+#   1. TLS. Browsers refuse camera and microphone access outside a secure
+#      context, so put this behind a reverse proxy that terminates HTTPS
+#      (Caddy, nginx, Traefik) and forwards both / and /ws.
+#   2. TURN. Peers on networks that block direct connections need a relay.
+#      Uncomment the coturn service below and point AGMEET_ICE_SERVERS at it.
+
+services:
+  agmeet:
+    build: .
+    # image: ghcr.io/YOUR-ORG/agmeet:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      AGMEET_BIND: 0.0.0.0:8080
+      # Cap on a single room. The mesh means each participant sends one stream
+      # per peer, so raising this asks more of every participant's uplink, not
+      # of this server. Eight or fewer cameras is comfortable.
+      AGMEET_MAX_ROOM_SIZE: "16"
+      AGMEET_LOG: agmeet_server=info
+      # Empty is correct on a LAN. For the internet, supply STUN and TURN:
+      # AGMEET_ICE_SERVERS: >-
+      #   [{"urls":"stun:turn.example.org:3478"},
+      #    {"urls":"turn:turn.example.org:3478",
+      #     "username":"agmeet","credential":"CHANGE-ME"}]
+      AGMEET_ICE_SERVERS: ""
+
+  # Uncomment for deployments where peers are not on the same network.
+  # coturn:
+  #   image: coturn/coturn:alpine
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   command:
+  #     - --listening-port=3478
+  #     - --realm=turn.example.org
+  #     - --user=agmeet:CHANGE-ME
+  #     - --min-port=49160
+  #     - --max-port=49200
+  #     - --no-tls
+  #     - --no-dtls

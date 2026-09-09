@@ -1,0 +1,756 @@
+/* ==========================================================================
+   Panel views, states, lobby, and transient overlays
+   ========================================================================== */
+
+/* --- Panel tabs ----------------------------------------------------------- */
+
+.tab {
+  flex: 1;
+  height: 32px;
+  font: var(--t-label);
+  color: var(--text-3);
+  border-radius: var(--r-sm);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state);
+}
+
+.tab:hover {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: var(--edge-light);
+}
+
+.tab__count {
+  margin-left: 5px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+/* --- Chat ----------------------------------------------------------------
+   A modern messaging surface: grouped by author, no bubbles, generous
+   leading. The composer floats at the foot of the panel. */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  min-height: 0;
+}
+
+.msg {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: var(--s-3);
+  animation: msg-in var(--m-base) var(--ease-out) both;
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+/* Consecutive messages from the same author lose the repeated header. */
+.msg--continued {
+  margin-top: calc(var(--s-4) * -1 + 3px);
+}
+
+.msg--continued .msg__head,
+.msg--continued .avatar {
+  visibility: hidden;
+  height: 0;
+}
+
+.msg--continued .avatar {
+  overflow: hidden;
+}
+
+.msg__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin-bottom: 3px;
+}
+
+.msg__author {
+  font: var(--t-label);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg__time {
+  font-family: var(--font-num);
+  font-size: 11px;
+  color: var(--text-3);
+  flex: none;
+}
+
+.msg__body {
+  font: var(--t-body);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* The host's messages carry a quiet accent rule rather than a different
+   colour scheme. */
+.msg--host .msg__author {
+  color: var(--accent-bright);
+}
+
+.msg--self .msg__author::after {
+  content: "you";
+  margin-left: 6px;
+  font: var(--t-caption);
+  color: var(--text-faint);
+}
+
+/* --- Composer ------------------------------------------------------------- */
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-2);
+  margin: var(--s-3);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-radius: var(--r-lg);
+  transition: border-color var(--m-base) var(--ease-state),
+    box-shadow var(--m-base) var(--ease-state);
+}
+
+.composer:focus-within {
+  border-color: rgba(123, 108, 255, 0.4);
+  box-shadow: var(--edge-light), 0 0 24px -10px rgba(123, 108, 255, 0.7);
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 24px;
+  max-height: 132px;
+  padding: 6px 0;
+  font: var(--t-body);
+  color: var(--text-1);
+  resize: none;
+  outline: none;
+  scrollbar-width: thin;
+}
+
+.composer textarea::placeholder {
+  color: var(--text-faint);
+}
+
+/* --- Participants --------------------------------------------------------- */
+
+.people {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-3);
+  min-height: 0;
+}
+
+.person {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2);
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state);
+}
+
+.person:hover,
+.person:focus-within {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.person__id {
+  min-width: 0;
+}
+
+.person__name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: var(--t-label);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.person__role {
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.person__media {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+}
+
+.person__media svg {
+  width: 15px;
+  height: 15px;
+}
+
+.person__media .is-off {
+  color: var(--signal);
+}
+
+.person--speaking .person__name {
+  color: var(--accent-bright);
+}
+
+/* Moderator actions appear on hover or keyboard focus. The menu button stays
+   in the DOM so it is always reachable by keyboard, it is only visually
+   quiet until the row is engaged. */
+.person__menu {
+  opacity: 0;
+  transition: opacity var(--m-fast) var(--ease-state);
+}
+
+.person:hover .person__menu,
+.person__menu:focus-visible,
+.person__menu[aria-expanded="true"] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .person__menu {
+    opacity: 1;
+  }
+}
+
+/* --- Menu ----------------------------------------------------------------- */
+
+.menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 184px;
+  padding: var(--s-1);
+  border-radius: var(--r-md);
+  animation: menu-in var(--m-fast) var(--ease-out) both;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--s-3);
+  font: var(--t-label);
+  color: var(--text-2);
+  text-align: left;
+  border-radius: var(--r-xs);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state);
+}
+
+.menu__item svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.menu__item:hover {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.menu__item--danger:hover {
+  color: #fff;
+  background: rgba(232, 54, 92, 0.7);
+}
+
+/* --- States --------------------------------------------------------------
+   Empty, loading and error are part of the product, not fallbacks. */
+
+.state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-4);
+  height: 100%;
+  padding: var(--s-8);
+  text-align: center;
+  animation: state-in var(--m-slow) var(--ease-out) both;
+}
+
+@keyframes state-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.state__mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  color: var(--accent-bright);
+  background: radial-gradient(circle at 50% 35%, rgba(123, 108, 255, 0.22), transparent 70%);
+  border: 1px solid rgba(123, 108, 255, 0.22);
+  border-radius: var(--r-lg);
+  box-shadow: var(--edge-light);
+}
+
+.state__mark svg {
+  width: 26px;
+  height: 26px;
+}
+
+.state__title {
+  font: var(--t-title);
+  color: var(--text-1);
+}
+
+.state__body {
+  max-width: 42ch;
+  font: var(--t-body);
+  color: var(--text-3);
+}
+
+.state--error .state__mark {
+  color: var(--signal);
+  background: radial-gradient(circle at 50% 35%, rgba(255, 92, 122, 0.2), transparent 70%);
+  border-color: rgba(255, 92, 122, 0.26);
+}
+
+/* --- Skeletons -----------------------------------------------------------
+   Match the shape of what is loading. No spinners. */
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: var(--r-lg);
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.055) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: shimmer 1.6s var(--ease-state) infinite;
+}
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}
+
+/* --- Connection status ---------------------------------------------------- */
+
+.link-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.link-state[data-state="poor"] {
+  color: #ffca7a;
+}
+
+.link-state[data-state="reconnecting"],
+.link-state[data-state="lost"] {
+  color: var(--signal);
+}
+
+/* --- Toasts --------------------------------------------------------------- */
+
+.toasts {
+  position: fixed;
+  /* Clear of the room header, so a notice never sits on the room name. */
+  top: calc(var(--header-h) + var(--s-6));
+  left: 50%;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  align-items: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: min(92vw, 460px);
+  padding: 10px var(--s-4);
+  font: var(--t-label);
+  color: var(--text-1);
+  border-radius: var(--r-pill);
+  animation: toast-in var(--m-slow) var(--ease-out) both;
+}
+
+.toast svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--accent-bright);
+}
+
+.toast--error svg {
+  color: var(--signal);
+}
+
+.toast.is-leaving {
+  animation: toast-out var(--m-base) var(--ease-state) both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
+/* --- Reactions -----------------------------------------------------------
+   Drift up from the dock and fade. Short-lived and never blocking. */
+
+.reactions {
+  position: absolute;
+  bottom: 88px;
+  left: 50%;
+  z-index: 25;
+  width: 0;
+  pointer-events: none;
+}
+
+.reaction {
+  position: absolute;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--accent-bright);
+  background: var(--glass-3-bg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-3-border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-2);
+  animation: float-up 2.6s var(--ease-out) both;
+}
+
+.reaction svg {
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.8);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--drift, 0px)), -150px) scale(0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction {
+    animation: reaction-fade 1.4s linear both;
+  }
+
+  @keyframes reaction-fade {
+    0%,
+    70% {
+      opacity: 1;
+      transform: translateX(-50%);
+    }
+    100% {
+      opacity: 0;
+      transform: translateX(-50%);
+    }
+  }
+}
+
+/* ==========================================================================
+   Lobby
+   --------------------------------------------------------------------------
+   Device check and room entry. Same design system, calmer composition: the
+   preview carries the screen and the controls sit beside it.
+   ========================================================================== */
+
+.lobby {
+  display: grid;
+  place-items: center;
+  height: 100dvh;
+  padding: var(--s-6);
+  overflow-y: auto;
+}
+
+.lobby__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--s-8);
+  width: 100%;
+  max-width: 1000px;
+  padding: var(--s-8);
+  border-radius: var(--r-xl);
+  animation: state-in var(--m-slow) var(--ease-out) both;
+}
+
+.lobby__preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: linear-gradient(155deg, rgba(19, 21, 38, 0.9), rgba(10, 12, 24, 0.95));
+  border: 1px solid var(--glass-1-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--edge-light), var(--shadow-2);
+}
+
+.lobby__preview video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.lobby__preview-controls {
+  position: absolute;
+  bottom: var(--s-4);
+  left: 50%;
+  display: flex;
+  gap: var(--s-2);
+  padding: 6px;
+  border-radius: var(--r-pill);
+  transform: translateX(-50%);
+}
+
+.lobby__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  align-self: center;
+}
+
+.lobby__title {
+  font: var(--t-display);
+  letter-spacing: -0.028em;
+}
+
+.lobby__sub {
+  margin-top: var(--s-2);
+  font: var(--t-body);
+  color: var(--text-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.field__label {
+  font: var(--t-label);
+  color: var(--text-2);
+}
+
+.field__hint {
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.field__error {
+  font: var(--t-caption);
+  color: var(--signal);
+}
+
+.input,
+.select {
+  width: 100%;
+  height: 42px;
+  padding: 0 var(--s-4);
+  font: var(--t-body);
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-2-border);
+  border-radius: var(--r-md);
+  outline: none;
+  transition: border-color var(--m-base) var(--ease-state),
+    box-shadow var(--m-base) var(--ease-state), background var(--m-base) var(--ease-state);
+}
+
+.input::placeholder {
+  color: var(--text-faint);
+}
+
+.input:hover,
+.select:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.input:focus,
+.select:focus {
+  border-color: rgba(123, 108, 255, 0.5);
+  box-shadow: 0 0 0 3px rgba(123, 108, 255, 0.16);
+}
+
+.input[aria-invalid="true"] {
+  border-color: rgba(255, 92, 122, 0.55);
+}
+
+.select {
+  appearance: none;
+  padding-right: var(--s-8);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a6abc4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--s-4) center;
+}
+
+.select option {
+  color: #f2f4ff;
+  background: #12142400;
+  background-color: #121424;
+}
+
+/* --- Switch --------------------------------------------------------------
+   A real <input type="checkbox"> underneath, so it keeps native semantics,
+   keyboard behaviour and screen-reader support; only the paint is ours. */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 23px;
+  appearance: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-2-border);
+  border-radius: var(--r-pill);
+  transition: background var(--m-base) var(--ease-state),
+    border-color var(--m-base) var(--ease-state);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  background: var(--text-2);
+  border-radius: 50%;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--m-base) var(--ease-out),
+    background var(--m-base) var(--ease-state);
+}
+
+.switch:checked {
+  background: linear-gradient(140deg, var(--accent-bright), var(--accent));
+  border-color: transparent;
+}
+
+.switch:checked::after {
+  background: #fff;
+  transform: translateX(17px);
+}
+
+.switch:hover:not(:checked) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  cursor: pointer;
+}
+
+.toggle__text {
+  min-width: 0;
+}
+
+@media (max-width: 880px) {
+  .lobby__card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-6);
+    padding: var(--s-5);
+  }
+
+  .lobby__preview {
+    aspect-ratio: 16 / 11;
+  }
+}
+
+@media (max-width: 720px) {
+  .toasts {
+    top: calc(52px + var(--s-4));
+  }
+
+  .lobby {
+    padding: var(--s-3);
+    place-items: stretch;
+  }
+
+  .lobby__card {
+    padding: var(--s-4);
+    border-radius: var(--r-lg);
+  }
+
+  .lobby__title {
+    font: var(--t-title);
+  }
+}

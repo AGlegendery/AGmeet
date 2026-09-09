@@ -1,0 +1,683 @@
+/* ==========================================================================
+   Components
+   ========================================================================== */
+
+/* --- Buttons --------------------------------------------------------------
+   Tactile without exaggeration: surfaces brighten and lift 1px, they do not
+   bounce or scale up. Pressing pushes back down. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  height: 36px;
+  padding: 0 var(--s-4);
+  font: var(--t-label);
+  color: var(--text-2);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state), border-color var(--m-fast) var(--ease-state),
+    transform var(--m-fast) var(--ease-state), box-shadow var(--m-fast) var(--ease-state);
+}
+
+.btn svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.btn:hover:not(:disabled) {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn--glass {
+  color: var(--text-2);
+  background: var(--glass-2-bg);
+  border-color: var(--glass-2-border);
+  box-shadow: var(--edge-light);
+}
+
+.btn--glass:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+.btn--accent {
+  color: var(--text-on-accent);
+  background: linear-gradient(140deg, var(--accent-bright), var(--accent));
+  box-shadow: var(--edge-light), 0 8px 24px -10px rgba(123, 108, 255, 0.85);
+}
+
+.btn--accent:hover:not(:disabled) {
+  color: var(--text-on-accent);
+  filter: brightness(1.07);
+}
+
+.btn--danger {
+  color: var(--signal);
+  background: rgba(255, 92, 122, 0.1);
+  border-color: rgba(255, 92, 122, 0.24);
+}
+
+.btn--danger:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 92, 122, 0.9);
+  border-color: transparent;
+}
+
+.btn--lg {
+  height: 44px;
+  padding: 0 var(--s-6);
+  font: var(--t-heading);
+  border-radius: var(--r-md);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+/* Square icon button. 40px keeps it comfortably above the 44px touch target
+   once its 4px of surrounding gap is counted; the dock uses a larger size. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  color: var(--text-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state), transform var(--m-fast) var(--ease-state);
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.icon-btn[aria-pressed="true"],
+.icon-btn.is-active {
+  color: var(--accent-bright);
+  background: rgba(123, 108, 255, 0.16);
+}
+
+/* --- Navigation ----------------------------------------------------------- */
+
+.nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 38px;
+  padding: 0 var(--s-3);
+  font: var(--t-label);
+  color: var(--text-3);
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state);
+}
+
+.nav__item svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+}
+
+.nav__item:hover {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+/* Active navigation: soft illuminated glass with a small accent glow, not a
+   solid accent block. */
+.nav__item[aria-current="page"] {
+  color: var(--text-1);
+  background: linear-gradient(
+    100deg,
+    rgba(123, 108, 255, 0.2),
+    rgba(123, 108, 255, 0.07)
+  );
+  border-color: rgba(123, 108, 255, 0.24);
+  box-shadow: var(--edge-light), 0 0 20px -8px rgba(123, 108, 255, 0.7);
+}
+
+.nav__item[aria-current="page"] svg {
+  color: var(--accent-bright);
+}
+
+/* --- Account -------------------------------------------------------------- */
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2);
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state);
+}
+
+.account:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.account__id {
+  min-width: 0;
+  text-align: left;
+}
+
+.account__name {
+  font: var(--t-label);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account__status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+/* --- Avatar --------------------------------------------------------------
+   Initials on a hue derived from the name. No stock silhouettes, no images
+   to load, and every participant is instantly distinguishable. */
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  font: var(--t-caption);
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.02em;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    145deg,
+    hsl(var(--hue, 250) 62% 58%),
+    hsl(calc(var(--hue, 250) + 28) 58% 44%)
+  );
+  box-shadow: var(--edge-light);
+  user-select: none;
+}
+
+.avatar--lg {
+  width: 64px;
+  height: 64px;
+  font: var(--t-title);
+}
+
+.avatar--xl {
+  width: 92px;
+  height: 92px;
+  font: var(--t-display);
+}
+
+/* --- Pills ---------------------------------------------------------------
+   Reserved for status. Never used for actions. */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  font: var(--t-caption);
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-pill);
+}
+
+.pill--live {
+  color: #ffd7de;
+  background: rgba(255, 92, 122, 0.15);
+  border-color: rgba(255, 92, 122, 0.32);
+}
+
+.pill--host {
+  color: #ddd6ff;
+  background: rgba(123, 108, 255, 0.16);
+  border-color: rgba(123, 108, 255, 0.3);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dot--live {
+  background: var(--signal);
+  animation: pulse 2.4s var(--ease-state) infinite;
+}
+
+.dot--online {
+  background: var(--positive);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(255, 92, 122, 0.5);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 4px rgba(255, 92, 122, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot--live {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Meeting stage
+   ========================================================================== */
+
+.stage__grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: var(--s-3);
+  height: 100%;
+  padding: var(--s-3);
+  padding-bottom: 96px; /* clearance for the floating dock */
+}
+
+/* The layout pass measures the stage and publishes the exact tile size, so
+   the row wraps at the intended count and the last row centres itself. */
+.stage__grid > .tile {
+  flex: none;
+  width: var(--tile-w, 100%);
+  height: var(--tile-h, auto);
+}
+
+/* Spotlight: shared screen or pinned speaker takes the stage, everyone else
+   drops into a filmstrip below it. */
+.stage--spotlight .stage__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+}
+
+.stage--spotlight .stage__grid > .tile {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.filmstrip {
+  display: flex;
+  gap: var(--s-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.filmstrip::-webkit-scrollbar {
+  display: none;
+}
+
+.filmstrip .tile {
+  flex: 0 0 168px;
+  width: 168px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+/* --- Participant tile -----------------------------------------------------
+   A floating glass object, not a rectangle of video. */
+
+.tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: linear-gradient(155deg, rgba(19, 21, 38, 0.9), rgba(10, 12, 24, 0.95));
+  border: 1px solid var(--glass-1-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--edge-light), var(--shadow-2);
+  transition: border-color var(--m-slow) var(--ease-state),
+    box-shadow var(--m-slow) var(--ease-state);
+  animation: tile-in var(--m-slow) var(--ease-out) both;
+}
+
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+.tile video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Screen share is letterboxed: cropping a shared document loses content. */
+.tile--screen video {
+  object-fit: contain;
+  background: #05060d;
+}
+
+.tile--self video {
+  transform: scaleX(-1);
+}
+
+.tile--self.tile--screen video {
+  transform: none;
+}
+
+/* Active speaker: a soft luminous edge that fades in. No flashing. */
+.tile--speaking {
+  border-color: rgba(123, 108, 255, 0.55);
+  box-shadow: var(--edge-light), var(--shadow-2), 0 0 32px -8px rgba(123, 108, 255, 0.65);
+}
+
+.tile--host {
+  border-color: rgba(123, 108, 255, 0.26);
+}
+
+.tile__footer {
+  position: absolute;
+  right: var(--s-3);
+  bottom: var(--s-3);
+  left: var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  pointer-events: none;
+}
+
+.tile__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  font: var(--t-caption);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(8, 9, 18, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: var(--r-pill);
+  box-shadow: var(--edge-light);
+}
+
+.tile__muted {
+  color: var(--signal);
+}
+
+.tile__muted svg {
+  width: 13px;
+  height: 13px;
+}
+
+.tile__badges {
+  position: absolute;
+  top: var(--s-3);
+  left: var(--s-3);
+  display: flex;
+  gap: 6px;
+}
+
+.tile__hand {
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-3);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #ffd88a;
+  background: rgba(255, 200, 80, 0.16);
+  border: 1px solid rgba(255, 200, 80, 0.32);
+  border-radius: var(--r-pill);
+}
+
+.tile__hand svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Camera off: the participant's identity, not an empty black box. */
+.tile__placeholder {
+  display: grid;
+  place-items: center;
+  gap: var(--s-3);
+  text-align: center;
+}
+
+/* --- Floating control dock ------------------------------------------------
+   Level 4: the closest surface to the user. It floats clear of the stage
+   edge rather than being welded to the bottom of the window. */
+
+.dock {
+  position: absolute;
+  bottom: var(--s-5);
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border-radius: var(--r-pill);
+  transform: translateX(-50%);
+  animation: dock-in var(--m-slow) var(--ease-out) both;
+}
+
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+}
+
+.dock__btn {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--r-pill);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state), transform var(--m-fast) var(--ease-state);
+}
+
+.dock__btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dock__btn:hover:not(:disabled) {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dock__btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.dock__btn[aria-pressed="true"] {
+  color: var(--accent-bright);
+  background: rgba(123, 108, 255, 0.18);
+  border-color: rgba(123, 108, 255, 0.34);
+}
+
+/* Media off is a state worth seeing at a glance, so it reads in the signal
+   colour rather than simply looking inactive. */
+.dock__btn--off {
+  color: var(--signal);
+  background: rgba(255, 92, 122, 0.13);
+  border-color: rgba(255, 92, 122, 0.26);
+}
+
+.dock__btn--off:hover:not(:disabled) {
+  color: var(--signal);
+  background: rgba(255, 92, 122, 0.2);
+}
+
+/* Leave sits apart, behind a confirmation, so it is never hit by accident. */
+.dock__leave {
+  width: auto;
+  padding: 0 var(--s-5);
+  margin-left: var(--s-2);
+  gap: var(--s-2);
+  display: flex;
+  align-items: center;
+  font: var(--t-label);
+  color: #fff;
+  /* Darkened so the white label clears 4.5:1 against the lighter stop. */
+  background: linear-gradient(140deg, #d63354, #b81f42);
+  border-color: transparent;
+  box-shadow: var(--edge-light), 0 8px 24px -10px rgba(232, 54, 92, 0.9);
+}
+
+.dock__leave:hover:not(:disabled) {
+  color: #fff;
+  background: linear-gradient(140deg, #e04264, #c8274b);
+}
+
+.dock__divider {
+  width: 1px;
+  height: 26px;
+  margin: 0 var(--s-1);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 720px) {
+  .dock {
+    bottom: var(--s-3);
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .dock__btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .dock__leave {
+    padding: 0 var(--s-4);
+  }
+
+  .dock__leave span {
+    display: none;
+  }
+
+  .stage__grid {
+    padding: var(--s-2);
+    padding-bottom: 84px;
+  }
+}
+
+/* --- Tooltip -------------------------------------------------------------- */
+
+.tip {
+  position: relative;
+}
+
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  z-index: 40;
+  padding: 5px 9px;
+  font: var(--t-caption);
+  color: var(--text-1);
+  white-space: nowrap;
+  background: var(--glass-3-bg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-3-border);
+  border-radius: var(--r-xs);
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  pointer-events: none;
+  transition: opacity var(--m-fast) var(--ease-out),
+    transform var(--m-fast) var(--ease-out);
+}
+
+.tip:hover::after,
+.tip:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* A tooltip on a control near the right edge would otherwise be centred on
+   the button and run off the viewport. Anchor those to the edge so they grow
+   inward instead. */
+.room-header__actions .tip::after,
+.tip--end::after {
+  left: auto;
+  right: 0;
+  transform: translate(0, 4px);
+}
+
+.room-header__actions .tip:hover::after,
+.room-header__actions .tip:focus-visible::after,
+.tip--end:hover::after,
+.tip--end:focus-visible::after {
+  transform: translate(0, 0);
+}
+
+/* Touch devices have no hover, and the label is already on the button's
+   accessible name. */
+@media (hover: none) {
+  .tip::after {
+    display: none;
+  }
+}
+
+/* Below the tablet break every control is thumb-sized and labelled; a hover
+   tooltip is dead weight that only risks overflowing. */
+@media (max-width: 720px) {
+  .tip::after {
+    display: none;
+  }
+}

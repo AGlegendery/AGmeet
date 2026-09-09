@@ -1,0 +1,16 @@
+# Rust
+/server/target/
+
+# Node
+node_modules/
+/web/dist/
+
+# Editors and OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local configuration
+.env
+.env.local
