@@ -995,6 +995,9 @@ function startMeeting(
    * A reaction says who sent it. Anonymous icons drifting up the screen tell
    * a room that somebody reacted, which is not the information anybody wanted.
    */
+  /** At most this many on screen: a room of sixteen can react at once. */
+  const MAX_REACTIONS = 5;
+
   function showReaction(kind: string, who?: string): void {
     const icon = icons[kind as keyof typeof icons];
     if (!icon) return;
@@ -1002,9 +1005,12 @@ function startMeeting(
       el("span", { class: "reaction__mark", html: icon }),
       ...(who ? [el("span", { class: "reaction__who", text: who })] : []),
     ]);
-    node.style.setProperty("--drift", `${Math.round((Math.random() - 0.5) * 70)}px`);
-    node.style.left = `${Math.round((Math.random() - 0.5) * 150)}px`;
-    reactionLayer.append(node);
+    // Prepended into a column-reverse stack: the newest sits closest to the
+    // dock it came from and pushes the ones before it up the screen.
+    reactionLayer.prepend(node);
+    while (reactionLayer.children.length > MAX_REACTIONS) {
+      reactionLayer.lastElementChild?.remove();
+    }
     window.setTimeout(() => node.remove(), prefersReducedMotion() ? 1600 : 3000);
   }
 

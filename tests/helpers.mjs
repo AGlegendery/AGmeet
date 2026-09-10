@@ -13,6 +13,9 @@ const ARGS = [
   "--use-fake-ui-for-media-stream",
   "--use-fake-device-for-media-stream",
   "--autoplay-policy=no-user-gesture-required",
+  // Screen sharing otherwise stops at a picker no test can answer.
+  "--auto-select-desktop-capture-source=Entire screen",
+  "--auto-accept-this-tab-capture",
 ];
 
 /** CI images often ship a Chromium that predates this Playwright version. */

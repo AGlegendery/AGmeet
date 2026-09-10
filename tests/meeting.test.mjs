@@ -117,11 +117,65 @@ check("mute is mirrored on the other peer's tile", muted);
 await host.click('.dock__btn[aria-label="Unmute microphone"]');
 await guest.waitForTimeout(500);
 
+console.log("\n--- the stage holds still ---");
+// Toggling a microphone used to rebuild the grid, which detached every
+// <video>, restarted playback and replayed the entrance animation: the middle
+// of the screen appeared to reload on every media change.
+await host.evaluate(() => {
+  window.__tiles = new Map(
+    [...document.querySelectorAll(".stage__grid video")].map((v, i) => [i, v])
+  );
+  window.__time = [...document.querySelectorAll(".stage__grid video")].map((v) => v.currentTime);
+});
+await host.click('.dock__btn[aria-label="Turn camera off"]');
+await host.waitForTimeout(600);
+await host.click('.dock__btn[aria-label="Turn camera on"]');
+await host.waitForTimeout(600);
+await host.click('.dock__btn[aria-label="Mute microphone"]');
+await host.waitForTimeout(600);
+await host.click('.dock__btn[aria-label="Unmute microphone"]');
+await host.waitForTimeout(900);
+const held = await host.evaluate(() => {
+  const now = [...document.querySelectorAll(".stage__grid video")];
+  return {
+    same: now.every((v, i) => window.__tiles.get(i) === v),
+    advanced: now.every((v, i) => v.currentTime >= window.__time[i]),
+    paused: now.filter((v) => v.paused).length,
+    animating: now.filter((v) =>
+      v.closest(".tile")?.getAnimations().some((a) => a.playState === "running")
+    ).length,
+  };
+});
+check("the same video elements survive a media change", held.same);
+check("playback is never restarted", held.advanced && held.paused === 0, JSON.stringify(held));
+check("no tile replays its entrance", held.animating === 0, `${held.animating} animating`);
+
 console.log("\n--- participants panel ---");
 await guest.click('button[role="tab"]:has-text("People")');
 await guest.waitForTimeout(300);
 const people = await guest.locator(".person").count();
 check("participant list shows both", people === 2, `${people} rows`);
+
+console.log("\n--- screen sharing ---");
+await host.click('.dock__btn[aria-label="Share screen"]');
+await host.waitForTimeout(3000);
+check("the sharer's stage goes to spotlight", await host.evaluate(() =>
+  document.querySelector(".stage").classList.contains("stage--spotlight")
+));
+const shared = await guest.evaluate(() => {
+  const v = document.querySelector(".tile--screen video");
+  return v ? { w: v.videoWidth, h: v.videoHeight, paused: v.paused } : null;
+});
+check("the other peer receives the screen", shared !== null && shared.w > 0 && !shared.paused, JSON.stringify(shared));
+check(
+  "the shared screen is labelled with whose it is",
+  (await guest.textContent(".tile--screen .tile__name")).includes("screen"),
+  await guest.textContent(".tile--screen .tile__name")
+);
+check("everyone else drops into the filmstrip", await guest.isVisible(".filmstrip"));
+await host.click('.dock__btn[aria-label="Stop sharing screen"]');
+await guest.waitForTimeout(1200);
+check("stopping returns the grid", (await guest.locator(".tile--screen").count()) === 0);
 
 console.log("\n--- adaptive grid ---");
 const optimal = await host.evaluate(() => {
