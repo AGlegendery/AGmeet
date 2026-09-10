@@ -47,6 +47,18 @@ interface Peer {
   lastPacketsLost: number;
   lastPacketsReceived: number;
   quality: PeerQuality;
+  /** Most recent round-trip time in milliseconds, or null before the first
+   *  sample lands. */
+  rttMs: number | null;
+  /** Fraction of packets lost in the last sampling window. */
+  loss: number;
+}
+
+/** What the header shows: bars, plus the numbers behind them. */
+export interface LinkStrength {
+  bars: 0 | 1 | 2 | 3;
+  rttMs: number | null;
+  lossPercent: number;
 }
 
 export class PeerMesh {
@@ -117,6 +129,8 @@ export class PeerMesh {
       lastPacketsLost: 0,
       lastPacketsReceived: 0,
       quality: "good",
+      rttMs: null,
+      loss: 0,
     };
     this.peers.set(id, peer);
 
@@ -279,6 +293,12 @@ export class PeerMesh {
             lost += (entry as RTCInboundRtpStreamStats).packetsLost ?? 0;
             received += (entry as RTCInboundRtpStreamStats).packetsReceived ?? 0;
           }
+          // The selected candidate pair carries the only round-trip time that
+          // reflects the path actually in use.
+          if (entry.type === "candidate-pair" && (entry as RTCIceCandidatePairStats).state === "succeeded") {
+            const rtt = (entry as RTCIceCandidatePairStats).currentRoundTripTime;
+            if (typeof rtt === "number") peer.rttMs = Math.round(rtt * 1000);
+          }
         });
 
         const deltaLost = lost - peer.lastPacketsLost;
@@ -288,6 +308,7 @@ export class PeerMesh {
 
         if (deltaReceived + deltaLost < 50) continue;
         const ratio = deltaLost / (deltaReceived + deltaLost);
+        peer.loss = ratio;
         this.setQuality(id, peer, ratio > 0.06 ? "poor" : "good");
       } catch {
         // getStats can reject while a connection is tearing down.
@@ -332,6 +353,35 @@ export class PeerMesh {
       levels.set(id, level);
     }
     return levels;
+  }
+
+  /**
+   * The link as a person would read it: bars, plus the latency and loss the
+   * bars are made of. "Connected" alone does not tell anyone whether the call
+   * is about to fall over.
+   */
+  linkStrength(): LinkStrength {
+    let worstRtt: number | null = null;
+    let worstLoss = 0;
+    let connected = 0;
+    for (const [, peer] of this.peers) {
+      if (peer.pc.connectionState !== "connected") continue;
+      connected += 1;
+      if (peer.rttMs !== null) worstRtt = Math.max(worstRtt ?? 0, peer.rttMs);
+      worstLoss = Math.max(worstLoss, peer.loss);
+    }
+    if (this.peers.size === 0) {
+      // Alone in the room: nothing to measure, and nothing wrong.
+      return { bars: 3, rttMs: null, lossPercent: 0 };
+    }
+    if (connected === 0) return { bars: 0, rttMs: null, lossPercent: 0 };
+
+    let bars: 0 | 1 | 2 | 3 = 3;
+    if (worstLoss > 0.1 || (worstRtt !== null && worstRtt > 400)) bars = 1;
+    else if (worstLoss > 0.03 || (worstRtt !== null && worstRtt > 180)) bars = 2;
+    if (this.worstQuality() === "lost") bars = 0;
+
+    return { bars, rttMs: worstRtt, lossPercent: Math.round(worstLoss * 100) };
   }
 
   /** Worst quality across all peers, for the single status shown in the header. */

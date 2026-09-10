@@ -22,7 +22,6 @@
 .tab[aria-selected="true"] {
   color: var(--text-1);
   background: var(--hover-wash);
-  box-shadow: var(--edge-light);
 }
 
 .tab__count {
@@ -130,7 +129,6 @@
 
 .composer:focus-within {
   border-color: var(--accent-edge);
-  box-shadow: var(--edge-light), 0 0 24px -10px var(--accent-glow);
 }
 
 .composer textarea {
@@ -316,7 +314,6 @@
   background: radial-gradient(circle at 50% 35%, var(--accent-wash-hover), transparent 70%);
   border: 1px solid var(--accent-wash-hover);
   border-radius: var(--r-lg);
-  box-shadow: var(--edge-light);
 }
 
 .state__mark svg {
@@ -454,11 +451,12 @@
 }
 
 /* --- Reactions -----------------------------------------------------------
-   Drift up from the dock and fade. Short-lived and never blocking. */
+   They rise from just above the dock and carry the sender's name, so the
+   room learns who reacted rather than that somebody did. */
 
 .reactions {
   position: absolute;
-  bottom: 88px;
+  bottom: 96px;
   left: 50%;
   z-index: 25;
   width: 0;
@@ -468,48 +466,59 @@
 .reaction {
   position: absolute;
   bottom: 0;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  color: var(--accent-bright);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 9px;
+  white-space: nowrap;
   background: var(--glass-3-bg);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--glass-3-border);
   border-radius: var(--r-pill);
-  box-shadow: var(--shadow-2);
-  animation: float-up 2.6s var(--ease-out) both;
+  animation: float-up 3s var(--ease-out) both;
 }
 
-.reaction svg {
-  width: 20px;
-  height: 20px;
+.reaction__mark {
+  display: grid;
+  place-items: center;
+  color: var(--accent-text);
+}
+
+.reaction__mark svg {
+  width: 19px;
+  height: 19px;
+}
+
+.reaction__who {
+  font: var(--t-caption);
+  color: var(--text-2);
 }
 
 @keyframes float-up {
   0% {
     opacity: 0;
-    transform: translate(-50%, 10px) scale(0.8);
+    transform: translate(-50%, 14px) scale(0.9);
   }
-  14% {
+  12% {
     opacity: 1;
     transform: translate(-50%, 0) scale(1);
   }
+  72% {
+    opacity: 1;
+  }
   100% {
     opacity: 0;
-    transform: translate(calc(-50% + var(--drift, 0px)), -150px) scale(0.9);
+    transform: translate(calc(-50% + var(--drift, 0px)), -170px) scale(0.96);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .reaction {
-    animation: reaction-fade 1.4s linear both;
+    animation: reaction-hold 1.6s linear both;
   }
 
-  @keyframes reaction-fade {
+  @keyframes reaction-hold {
     0%,
-    70% {
+    72% {
       opacity: 1;
       transform: translateX(-50%);
     }
@@ -555,7 +564,6 @@
   background: var(--tile-bg);
   border: 1px solid var(--glass-1-border);
   border-radius: var(--r-lg);
-  box-shadow: var(--edge-light), var(--shadow-2);
 }
 
 .lobby__preview video {
@@ -692,7 +700,6 @@
   height: 17px;
   background: var(--text-2);
   border-radius: 50%;
-  box-shadow: var(--shadow-1);
   transition: transform var(--m-base) var(--ease-out),
     background var(--m-base) var(--ease-state);
 }
@@ -771,7 +778,6 @@
   background: var(--board-bg);
   border: 1px solid var(--glass-2-border);
   border-radius: var(--r-lg);
-  box-shadow: var(--edge-light), var(--shadow-2);
 }
 
 /* A faint dot grid: enough to judge scale and keep lines honest, far too
@@ -851,7 +857,6 @@
   inset: 5px;
   background: var(--ink);
   border-radius: 50%;
-  box-shadow: var(--edge-light);
   transition: inset var(--m-fast) var(--ease-out);
 }
 
@@ -906,8 +911,6 @@
   font: var(--t-caption);
   color: var(--text-2);
   background: var(--glass-3-bg);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--glass-3-border);
   border-radius: var(--r-pill);
   transform: translateX(-50%);
@@ -1029,6 +1032,27 @@
   color: var(--text-1);
 }
 
+/* The operator's live read-out while a poll is open. Set apart from the
+   options above it by a rule, and quieter than a published result: it is a
+   glance at how the room is going, not the announcement. */
+.poll__tally {
+  display: grid;
+  gap: var(--s-1);
+  padding-top: var(--s-3);
+  margin-top: var(--s-1);
+  border-top: 1px solid var(--divider);
+}
+
+.poll__tally-head {
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.poll__result--live {
+  padding: 6px var(--s-3);
+  font: var(--t-caption);
+}
+
 .poll__meta {
   display: flex;
   align-items: center;
@@ -1083,9 +1107,7 @@
   align-items: center;
   gap: var(--s-6);
   padding: var(--s-4) var(--s-6);
-  background: color-mix(in srgb, var(--ground) 82%, transparent);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: var(--ground);
   border-bottom: 1px solid var(--divider);
 }
 
@@ -1198,7 +1220,6 @@
 .segment[aria-checked="true"] {
   color: var(--accent-ink);
   background: var(--accent);
-  box-shadow: var(--shadow-1);
 }
 
 /* --- Recent rooms --------------------------------------------------------- */
@@ -1347,13 +1368,13 @@
 .polldlg__layer {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  /* Above the popover menus (60): a dialog opened from a menu must not have
+     that menu floating over it. */
+  z-index: 70;
   display: grid;
   place-items: center;
   padding: var(--s-5);
-  background: color-mix(in srgb, var(--ground-deep) 55%, transparent);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: color-mix(in srgb, var(--ground-deep) 62%, transparent);
   animation: state-in var(--m-base) var(--ease-out) both;
 }
 
@@ -1537,6 +1558,70 @@
   color: var(--accent-text);
 }
 
+/* An attachment. Same shape as a poll notice — both are things in the
+   conversation you can act on — but in the room's neutral surface rather than
+   the accent: a shared file is not an interruption. */
+.msg-file {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3);
+  text-align: left;
+  background: var(--hover-wash);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state);
+}
+
+.msg-file:hover:not(:disabled) {
+  background: var(--divider);
+}
+
+.msg-file--gone {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.msg-file__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: var(--text-2);
+}
+
+.msg-file__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.msg-file__id {
+  min-width: 0;
+  flex: 1;
+}
+
+.msg-file__name {
+  display: block;
+  font: var(--t-label);
+  color: var(--text-1);
+  /* A long filename wraps rather than pushing the download out of reach. */
+  overflow-wrap: anywhere;
+}
+
+.msg-file__meta {
+  display: block;
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.msg-file__go {
+  flex: none;
+  font: var(--t-caption);
+  color: var(--accent-text);
+}
+
 .msg-results {
   display: flex;
   gap: var(--s-3);
@@ -1684,4 +1769,176 @@
   .brand__mark--sm {
     display: none;
   }
+}
+
+/* Moderator controls sit inside the popup, so a poll is run from the same
+   place the room answers it. */
+.polldlg__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--divider);
+}
+
+.polldlg__controls .btn {
+  height: 32px;
+  padding: 0 var(--s-3);
+}
+
+/* The dock's More menu opens upward and uses words, not glyphs. */
+.dock__menu {
+  top: auto;
+  bottom: calc(100% + 12px);
+  right: auto;
+  left: 50%;
+  min-width: 250px;
+  transform: translateX(-50%);
+}
+
+.dock__menu .menu__item {
+  height: auto;
+  padding: var(--s-2) var(--s-3);
+  align-items: flex-start;
+}
+
+.dock__menu .menu__item svg {
+  margin-top: 2px;
+}
+
+/* The room's settings and appearance menus, mounted with the controls rather
+   than in the header. They are ordinary popovers; only their placement
+   changed, so they inherit the dock's upward-opening menu. */
+.dock__slot {
+  display: inline-flex;
+  align-items: center;
+  gap: inherit;
+}
+
+.dock__slot .popover {
+  position: relative;
+}
+
+@media (max-width: 720px) {
+  .dock__menu {
+    left: auto;
+    right: 0;
+    transform: none;
+    min-width: min(280px, calc(100vw - var(--s-6)));
+  }
+}
+
+/* --- Signal bars ---------------------------------------------------------- */
+
+.bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.bars i {
+  width: 3px;
+  background: var(--text-faint);
+  border-radius: 1px;
+  transition: background var(--m-base) var(--ease-state);
+}
+
+.bars i:nth-child(1) { height: 5px; }
+.bars i:nth-child(2) { height: 8px; }
+.bars i:nth-child(3) { height: 12px; }
+
+.link-state[data-bars="3"] i { background: var(--positive); }
+.link-state[data-bars="2"] i:nth-child(-n + 2) { background: var(--caution); }
+.link-state[data-bars="1"] i:nth-child(1) { background: var(--signal); }
+.link-state[data-bars="0"] i { background: var(--signal); opacity: 0.45; }
+
+.link-state[data-bars="2"] i:nth-child(3),
+.link-state[data-bars="1"] i:nth-child(n + 2) {
+  background: var(--text-faint);
+}
+
+/* ==========================================================================
+   Roles and accounts
+   ========================================================================== */
+
+.polldlg--wide {
+  width: min(100%, 560px);
+}
+
+.roster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.roster__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.roster__title {
+  font: var(--t-heading);
+  color: var(--text-1);
+}
+
+.roster__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.roster__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  background: var(--field-bg);
+  border-radius: var(--r-sm);
+}
+
+.roster__id {
+  flex: 1;
+  min-width: 0;
+}
+
+.roster__name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font: var(--t-label);
+  color: var(--text-1);
+}
+
+.roster__meta {
+  display: block;
+  font: var(--t-caption);
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.roster__caps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s-1);
+}
+
+.roster__new summary {
+  padding: var(--s-2) var(--s-3);
+  font: var(--t-label);
+  color: var(--text-2);
+  cursor: pointer;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-sm);
+}
+
+.roster__new summary:hover {
+  color: var(--text-1);
+  background: var(--hover-wash);
+}
+
+.roster__new[open] summary {
+  color: var(--text-1);
 }

@@ -9,17 +9,17 @@
 
 import { el, formatDuration } from "../dom";
 import { icons } from "../icons";
+import type { LinkStrength } from "../rtc";
 import type { ConnectionState, RoomView } from "../types";
 
 export interface HeaderHandles {
   root: HTMLElement;
-  /** Slot for the room-settings and appearance menus. */
-  actions: HTMLElement;
   setRoom: (room: RoomView) => void;
   setCount: (count: number) => void;
-  setConnection: (state: ConnectionState) => void;
+  setConnection: (state: ConnectionState, strength?: LinkStrength) => void;
   setRecording: (active: boolean) => void;
   setKnocking: (count: number) => void;
+  setPanelOpen: (open: boolean) => void;
   tick: () => void;
 }
 
@@ -54,9 +54,17 @@ export function buildHeader(
 
   const lock = el("span", { class: "pill", hidden: true });
 
-  const connection = el("span", { class: "link-state", "data-state": "connecting" }, [
-    el("span", { html: icons.signal, style: "width:14px;height:14px" }),
-    el("span", { text: CONNECTION_LABEL.connecting }),
+  // Three bars and the numbers behind them. "Connected" on its own does not
+  // tell anybody whether their call is about to fall over.
+  const bars = el("span", { class: "bars", "aria-hidden": "true" }, [
+    el("i", {}),
+    el("i", {}),
+    el("i", {}),
+  ]);
+  const connectionLabel = el("span", { text: CONNECTION_LABEL.connecting });
+  const connection = el("span", { class: "link-state", "data-state": "connecting", "data-bars": "3" }, [
+    bars,
+    connectionLabel,
   ]);
 
   // Only appears when somebody is actually at the door.
@@ -87,13 +95,41 @@ export function buildHeader(
     "aria-expanded": "true",
     html: icons.chevronRight,
   });
-  panelToggle.addEventListener("click", () => {
-    const open = panelToggle.getAttribute("aria-expanded") === "true";
-    panelToggle.setAttribute("aria-expanded", String(!open));
-    onTogglePanel();
-  });
+  // The header does not own the panel's state; it reports the click and is
+  // told the outcome, so a shortcut that opens the panel keeps it in step.
+  panelToggle.addEventListener("click", () => onTogglePanel());
 
-  const actions = el("div", { class: "room-header__menus" });
+  /**
+   * On a phone the header cannot hold the connection state, an invite button
+   * and two menus — measured, that row is 417px wide inside a 390px viewport,
+   * and because a flex row will not shrink below its content it dragged the
+   * whole grid column off-screen. So the layout transforms: those controls
+   * move into a sheet behind one button, and move back on a wide screen.
+   * The nodes are relocated, not duplicated, so their listeners survive.
+   */
+  const sheet = el("div", { class: "popover__menu popover__menu--wide glass-3", role: "menu", hidden: true });
+  const overflowTrigger = el("button", {
+    class: "icon-btn header-more",
+    type: "button",
+    "aria-label": "Room actions",
+    "aria-haspopup": "menu",
+    "aria-expanded": "false",
+    html: icons.more,
+  });
+  const overflow = el("div", { class: "popover header-more-wrap" }, [overflowTrigger, sheet]);
+
+  overflowTrigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const opening = sheet.hidden;
+    sheet.hidden = !opening;
+    overflowTrigger.setAttribute("aria-expanded", String(opening));
+  });
+  document.addEventListener("click", (event) => {
+    if (!overflow.contains(event.target as Node)) {
+      sheet.hidden = true;
+      overflowTrigger.setAttribute("aria-expanded", "false");
+    }
+  });
 
   const root = el("header", { class: "room-header glass-1" }, [
     el("span", { class: "brand__mark brand__mark--sm", html: icons.logo, "aria-hidden": "true" }),
@@ -105,16 +141,38 @@ export function buildHeader(
       connection,
       knocks,
       copy,
-      actions,
+      overflow,
       panelToggle,
     ]),
   ]);
+
+  // --- Responsive relocation ---------------------------------------------
+  const narrow = window.matchMedia("(max-width: 720px)");
+  const row = root.querySelector(".room-header__actions") as HTMLElement;
+  /** Moved into the sheet on a phone, in this order. */
+  const relocatable = [connection, copy];
+
+  function applyViewport(): void {
+    if (narrow.matches) {
+      for (const node of relocatable) {
+        if (node.parentElement !== sheet) sheet.append(node);
+      }
+    } else {
+      sheet.hidden = true;
+      overflowTrigger.setAttribute("aria-expanded", "false");
+      // Put them back in their original order, before the overflow button.
+      for (const node of relocatable) {
+        if (node.parentElement !== row) row.insertBefore(node, overflow);
+      }
+    }
+  }
+  narrow.addEventListener("change", applyViewport);
+  applyViewport();
 
   let startedAt = Date.now();
 
   return {
     root,
-    actions,
     setRoom(room) {
       name.textContent = room.name;
       startedAt = room.startedAt;
@@ -134,12 +192,27 @@ export function buildHeader(
     setCount(value) {
       count.textContent = value === 1 ? "1 participant" : `${value} participants`;
     },
-    setConnection(state) {
+    setConnection(state, strength) {
       connection.setAttribute("data-state", state);
-      (connection.lastElementChild as HTMLElement).textContent = CONNECTION_LABEL[state];
+      const level = state === "connected" ? (strength?.bars ?? 3) : state === "poor" ? 1 : 0;
+      connection.setAttribute("data-bars", String(level));
+
+      let label = CONNECTION_LABEL[state];
+      if (state === "connected" && strength) {
+        const parts: string[] = [];
+        if (strength.rttMs !== null) parts.push(`${strength.rttMs} ms`);
+        if (strength.lossPercent > 0) parts.push(`${strength.lossPercent}% loss`);
+        if (parts.length > 0) label = parts.join(" · ");
+        else if (level === 3) label = "Strong";
+      }
+      connectionLabel.textContent = label;
+      connection.setAttribute("aria-label", `Connection: ${CONNECTION_LABEL[state]}, ${label}`);
     },
     setRecording(active) {
       recording.hidden = !active;
+    },
+    setPanelOpen(open) {
+      panelToggle.setAttribute("aria-expanded", String(open));
     },
     setKnocking(waiting) {
       knocks.hidden = waiting === 0;

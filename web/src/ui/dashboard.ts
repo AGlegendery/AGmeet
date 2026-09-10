@@ -9,7 +9,8 @@
 
 import { el, generateRoomId } from "../dom";
 import { icons } from "../icons";
-import type { CreateOptions, RoomLock } from "../types";
+import type { AccountSpec, AccountView, CreateOptions, RoleTemplate, RoomLock } from "../types";
+import { BUILTIN_TEMPLATES, buildRoster } from "./roster";
 import { buildThemeMenu } from "./settings";
 
 const NAME_KEY = "agmeet.name";
@@ -220,10 +221,61 @@ export function buildDashboard(onEnter: (request: EnterRequest) => void): HTMLEl
     }),
   ]);
 
+  // --- Roles and accounts -------------------------------------------------
+  // Edited here, before the room exists, and sent with it. Passwords are
+  // hashed the moment they reach the server and never stored in the clear.
+  let templates: RoleTemplate[] = [...BUILTIN_TEMPLATES];
+  const draftAccounts: (AccountSpec & { roleName: string })[] = [];
+
+  const asViews = (): AccountView[] =>
+    draftAccounts.map((a) => ({ username: a.username, role: a.role, roleName: a.roleName }));
+
+  const roster = buildRoster({
+    onSaveTemplate(template) {
+      templates = [...templates.filter((t) => t.id !== template.id), template];
+      roster.set(templates, asViews());
+    },
+    onDeleteTemplate(id) {
+      templates = templates.filter((t) => t.id !== id || t.builtin);
+      for (const account of draftAccounts) {
+        if (account.role === id) {
+          account.role = "attendee";
+          account.roleName = "Attendee";
+        }
+      }
+      roster.set(templates, asViews());
+    },
+    onSaveAccount(account) {
+      const roleName = templates.find((t) => t.id === account.role)?.name ?? "Attendee";
+      const at = draftAccounts.findIndex(
+        (a) => a.username.toLowerCase() === account.username.toLowerCase()
+      );
+      const entry = { ...account, roleName };
+      if (at === -1) draftAccounts.push(entry);
+      else draftAccounts[at] = entry;
+      roster.set(templates, asViews());
+    },
+    onDeleteAccount(username) {
+      const at = draftAccounts.findIndex(
+        (a) => a.username.toLowerCase() === username.toLowerCase()
+      );
+      if (at !== -1) draftAccounts.splice(at, 1);
+      roster.set(templates, asViews());
+    },
+  });
+  roster.set(templates, asViews());
+
+  const rosterField = el("div", { class: "field", hidden: true }, [roster.root]);
+
   const LOCKS: { value: RoomLock; label: string; hint: string }[] = [
     { value: "open", label: "Open", hint: "Anyone with the link walks in." },
     { value: "passcode", label: "Passcode", hint: "A shared code is required." },
     { value: "approval", label: "Ask to join", hint: "You admit each person by hand." },
+    {
+      value: "accounts",
+      label: "Sign in",
+      hint: "Each person signs in with an account, and their role decides what they can do.",
+    },
   ];
 
   let lock: RoomLock = "open";
@@ -244,6 +296,7 @@ export function buildDashboard(onEnter: (request: EnterRequest) => void): HTMLEl
       lockButtons.forEach((b, i) => b.setAttribute("aria-checked", String(LOCKS[i].value === lock)));
       lockHint.textContent = option.hint;
       passcodeField.hidden = lock !== "passcode";
+      rosterField.hidden = lock !== "accounts";
       if (lock === "passcode") passcode.focus();
     });
     return button;
@@ -265,6 +318,7 @@ export function buildDashboard(onEnter: (request: EnterRequest) => void): HTMLEl
       lockHint,
     ]),
     passcodeField,
+    rosterField,
     el("div", { class: "stack", style: "gap:var(--s-4)" }, [
       classroom.row,
       whiteboard.row,
@@ -288,6 +342,13 @@ export function buildDashboard(onEnter: (request: EnterRequest) => void): HTMLEl
       passcode.focus();
       return;
     }
+    if (lock === "accounts" && draftAccounts.length === 0) {
+      // A sign-in room with no accounts is a room nobody but its host can
+      // enter, which is never what anyone meant.
+      rosterField.hidden = false;
+      roster.root.scrollIntoView({ block: "center" });
+      return;
+    }
     const name = displayName();
     if (!name) return;
     onEnter({
@@ -301,6 +362,16 @@ export function buildDashboard(onEnter: (request: EnterRequest) => void): HTMLEl
         allowRecording: allowRecording.input.checked,
         lock,
         ...(lock === "passcode" ? { passcode: passcode.value.trim() } : {}),
+        ...(lock === "accounts"
+          ? {
+              templates: templates.filter((t) => !t.builtin),
+              accounts: draftAccounts.map(({ username, password, role }) => ({
+                username,
+                password,
+                role,
+              })),
+            }
+          : {}),
       },
     });
   });

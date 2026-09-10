@@ -13,8 +13,9 @@ use uuid::Uuid;
 use sha2::{Digest, Sha256};
 
 use crate::protocol::{
-    BoardView, ChatMessage, CreateOptions, MediaState, ParticipantId, ParticipantView, PollView,
-    Role, RoomLock, RoomSettings, RoomView, ServerMessage, Stroke,
+    AccountSpec, AccountView, BoardView, Capability, ChatKind, ChatMessage, CreateOptions, FileMeta,
+    MediaState, ParticipantId, ParticipantView, PollView, Role, RoleTemplate, RoomLock, RoomSettings,
+    RoomView, RosterView, ServerMessage, Stroke,
 };
 
 /// Chat kept per room so a late joiner sees recent context. Bounded so a
@@ -25,6 +26,17 @@ const CHAT_HISTORY: usize = 200;
 /// append to, so every dimension of it is bounded.
 const MAX_STROKES: usize = 2000;
 const MAX_POINTS_PER_STROKE: usize = 4000;
+
+/// Attachment limits. The bytes live in memory like everything else here, so
+/// both a single file and the room's whole retained set are bounded. Past the
+/// room budget the oldest attachment's bytes are dropped: its chat line stays,
+/// marked expired, which is honest about what happened.
+///
+/// Sized as base64, which is 4/3 of the file: 8 MiB of encoded data is roughly
+/// a 6 MB slide deck.
+pub const MAX_FILE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_ROOM_FILE_BYTES: usize = 48 * 1024 * 1024;
+pub const MAX_FILE_NAME_LEN: usize = 120;
 
 /// Poll limits, sized for a classroom rather than a survey tool.
 const MAX_POLLS: usize = 20;
@@ -56,6 +68,26 @@ fn passcode_matches(expected: &[u8; 32], candidate: &str) -> bool {
     difference == 0
 }
 
+/// Validates and hashes one account. Rejects an empty username or password,
+/// and an unknown template.
+fn store_account(spec: &AccountSpec, templates: &[RoleTemplate]) -> Option<StoredAccount> {
+    let username = spec.username.trim().to_ascii_lowercase();
+    if username.is_empty() || username.chars().count() > 64 {
+        return None;
+    }
+    if spec.password.trim().is_empty() {
+        return None;
+    }
+    if !templates.iter().any(|t| t.id == spec.role) {
+        return None;
+    }
+    Some(StoredAccount {
+        username,
+        password: hash_passcode(&spec.password),
+        role: spec.role.clone(),
+    })
+}
+
 pub fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -77,9 +109,29 @@ pub struct Participant {
     pub id: ParticipantId,
     pub name: String,
     pub role: Role,
+    /// What this person may do. Separate from `role`, which is about who owns
+    /// the room: a presenter and an attendee are both guests.
+    pub caps: Capability,
+    pub role_name: String,
     pub media: MediaState,
     pub joined_at: u64,
     pub outbox: Outbox,
+}
+
+impl Participant {
+    /// Running the room. The host always can, whatever template they signed
+    /// in under, or a room could be left with nobody able to manage it.
+    pub fn can_moderate(&self) -> bool {
+        self.role == Role::Host || self.caps.moderate
+    }
+}
+
+/// An account as the room holds it: a digest and a template id, never a
+/// password.
+pub struct StoredAccount {
+    pub username: String,
+    pub password: [u8; 32],
+    pub role: String,
 }
 
 impl Participant {
@@ -88,6 +140,8 @@ impl Participant {
             id: self.id,
             name: self.name.clone(),
             role: self.role,
+            caps: self.caps,
+            role_name: self.role_name.clone(),
             media: self.media,
             joined_at: self.joined_at,
         }
@@ -223,11 +277,27 @@ pub struct Room {
     pub passcode: Option<[u8; 32]>,
     /// People at the door, in arrival order.
     pub waiting: Vec<Knocker>,
+    pub templates: Vec<RoleTemplate>,
+    pub accounts: Vec<StoredAccount>,
     pub started_at: u64,
     pub participants: HashMap<ParticipantId, Participant>,
     chat: VecDeque<ChatMessage>,
+    /// Attachment bytes, keyed by the id their chat line carries. Kept out of
+    /// the room view: joining costs the descriptions, never the downloads.
+    files: HashMap<Uuid, StoredFile>,
+    /// Oldest first, so the budget evicts in arrival order.
+    file_order: VecDeque<Uuid>,
+    file_bytes: usize,
     pub board: Board,
     pub polls: Vec<Poll>,
+}
+
+/// One attachment, held as the base64 it arrived as: it is what goes back out
+/// on the wire, so decoding it here would only mean encoding it again.
+pub struct StoredFile {
+    pub name: String,
+    pub mime: String,
+    pub data: String,
 }
 
 impl Room {
@@ -248,15 +318,35 @@ impl Room {
                 .map(hash_passcode),
             _ => None,
         };
+        // The three built-ins always exist; the operator's own are added on
+        // top and may be edited or deleted later.
+        let mut templates = RoleTemplate::builtins();
+        for custom in &options.templates {
+            if custom.builtin || templates.iter().any(|t| t.id == custom.id) {
+                continue;
+            }
+            templates.push(RoleTemplate { builtin: false, ..custom.clone() });
+        }
+        let accounts = options
+            .accounts
+            .iter()
+            .filter_map(|spec| store_account(spec, &templates))
+            .collect();
+
         Self {
             id,
             name,
             settings,
             passcode,
             waiting: Vec::new(),
+            templates,
+            accounts,
             started_at: now_millis(),
             participants: HashMap::new(),
             chat: VecDeque::new(),
+            files: HashMap::new(),
+            file_order: VecDeque::new(),
+            file_bytes: 0,
             // A classroom board starts locked: thirty people drawing at once
             // is not a lesson. Any other room starts open.
             board: Board { locked: options.classroom, ..Board::default() },
@@ -280,7 +370,95 @@ impl Room {
     }
 
     pub fn moderators(&self) -> impl Iterator<Item = &Participant> {
-        self.participants.values().filter(|p| p.role.can_moderate())
+        self.participants.values().filter(|p| p.can_moderate())
+    }
+
+    /// True when this room admits people by account.
+    pub fn requires_sign_in(&self) -> bool {
+        self.settings.lock == RoomLock::Accounts && !self.accounts.is_empty()
+    }
+
+    /// Checks a username and password. Returns the template they were granted.
+    ///
+    /// A wrong username and a wrong password are the same answer on purpose:
+    /// telling somebody that a username exists is telling them half of it.
+    pub fn sign_in(&self, username: &str, password: &str) -> Option<&RoleTemplate> {
+        let username = username.trim().to_ascii_lowercase();
+        let account = self
+            .accounts
+            .iter()
+            .find(|a| a.username == username && passcode_matches(&a.password, password))?;
+        self.templates.iter().find(|t| t.id == account.role)
+    }
+
+    pub fn template(&self, id: &str) -> Option<&RoleTemplate> {
+        self.templates.iter().find(|t| t.id == id)
+    }
+
+    /// The roster, for a moderator's management view.
+    pub fn roster(&self) -> RosterView {
+        RosterView {
+            templates: self.templates.clone(),
+            accounts: self
+                .accounts
+                .iter()
+                .map(|a| AccountView {
+                    username: a.username.clone(),
+                    role: a.role.clone(),
+                    role_name: self
+                        .template(&a.role)
+                        .map(|t| t.name.clone())
+                        .unwrap_or_else(|| "Attendee".into()),
+                })
+                .collect(),
+        }
+    }
+
+    /// Adds or replaces a template. Built-ins cannot be overwritten.
+    pub fn save_template(&mut self, template: RoleTemplate) -> bool {
+        if template.name.trim().is_empty() || template.id.trim().is_empty() {
+            return false;
+        }
+        if self.templates.iter().any(|t| t.id == template.id && t.builtin) {
+            return false;
+        }
+        let stored = RoleTemplate { builtin: false, ..template };
+        match self.templates.iter_mut().find(|t| t.id == stored.id) {
+            Some(existing) => *existing = stored,
+            None => self.templates.push(stored),
+        }
+        true
+    }
+
+    /// Removes a custom template, moving any account on it back to attendee
+    /// rather than leaving that account pointing at nothing.
+    pub fn delete_template(&mut self, id: &str) -> bool {
+        let Some(index) = self.templates.iter().position(|t| t.id == id && !t.builtin) else {
+            return false;
+        };
+        self.templates.remove(index);
+        for account in &mut self.accounts {
+            if account.role == id {
+                account.role = "attendee".into();
+            }
+        }
+        true
+    }
+
+    pub fn save_account(&mut self, spec: &AccountSpec) -> bool {
+        let Some(stored) = store_account(spec, &self.templates) else { return false };
+        match self.accounts.iter_mut().find(|a| a.username == stored.username) {
+            Some(existing) => *existing = stored,
+            None => self.accounts.push(stored),
+        }
+        true
+    }
+
+    pub fn delete_account(&mut self, username: &str) -> bool {
+        let username = username.trim().to_ascii_lowercase();
+        let before = self.accounts.len();
+        self.accounts.retain(|a| a.username != username);
+        self.accounts.len() != before
     }
 
     /// Tells every moderator something. Used for the door: an arrival is a
@@ -305,6 +483,8 @@ impl Room {
             chat: self.chat.iter().cloned().collect(),
             board: self.board.view(),
             polls: self.polls.iter().map(Poll::view).collect(),
+            // Filled in by the caller for moderators only.
+            roster: RosterView { templates: Vec::new(), accounts: Vec::new() },
         }
     }
 
@@ -351,9 +531,52 @@ impl Room {
         Ok(view)
     }
 
+    /// Takes an attachment in and returns how the room will list it. The
+    /// caller has already checked that this participant may attach anything.
+    pub fn store_file(&mut self, name: String, mime: String, data: String) -> FileMeta {
+        let id = Uuid::new_v4();
+        // The wire size is the base64; the size shown to people is the file's.
+        let size = (data.len() as u64) * 3 / 4;
+        self.file_bytes += data.len();
+        self.file_order.push_back(id);
+        self.files.insert(id, StoredFile { name: name.clone(), mime: mime.clone(), data });
+
+        while self.file_bytes > MAX_ROOM_FILE_BYTES && self.file_order.len() > 1 {
+            let Some(oldest) = self.file_order.pop_front() else { break };
+            if let Some(dropped) = self.files.remove(&oldest) {
+                self.file_bytes -= dropped.data.len();
+            }
+            // The line stays and tells the truth about what is left of it.
+            for message in &mut self.chat {
+                if let Some(file) = &mut message.file {
+                    if file.id == oldest {
+                        file.expired = true;
+                    }
+                }
+            }
+        }
+
+        FileMeta { id, name, mime, size, expired: false }
+    }
+
+    pub fn file(&self, id: Uuid) -> Option<&StoredFile> {
+        self.files.get(&id)
+    }
+
     pub fn push_chat(&mut self, message: ChatMessage) {
         if self.chat.len() == CHAT_HISTORY {
-            self.chat.pop_front();
+            // A line falling off the end takes its attachment with it: nothing
+            // can reach those bytes again, so holding them is a slow leak.
+            if let Some(dropped) = self.chat.pop_front() {
+                if dropped.kind == ChatKind::File {
+                    if let Some(meta) = dropped.file {
+                        if let Some(file) = self.files.remove(&meta.id) {
+                            self.file_bytes -= file.data.len();
+                        }
+                        self.file_order.retain(|id| *id != meta.id);
+                    }
+                }
+            }
         }
         self.chat.push_back(message);
     }
@@ -418,6 +641,8 @@ pub struct JoinRequest {
     pub name: String,
     pub create: Option<CreateOptions>,
     pub passcode: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
     pub media: MediaState,
 }
 
@@ -425,6 +650,7 @@ pub struct JoinRequest {
 pub enum JoinOutcome {
     Admitted(ParticipantId, Role),
     NeedPasscode { retry: bool },
+    NeedSignIn { retry: bool },
     Knocking(ParticipantId),
     /// No such room, and the caller did not ask to open one.
     Missing,
@@ -484,6 +710,10 @@ impl AppState {
         // or an approval-gated room could never be opened.
         let opening = room.participants.is_empty();
 
+        // What the arrival is allowed to do, decided before they are added.
+        let mut caps = Capability::attendee();
+        let mut role_name = String::from("Attendee");
+
         if !opening {
             match room.settings.lock {
                 RoomLock::Open => {}
@@ -492,6 +722,23 @@ impl AppState {
                         return Ok(JoinOutcome::NeedPasscode {
                             retry: request.passcode.is_some(),
                         });
+                    }
+                }
+                RoomLock::Accounts => {
+                    if room.requires_sign_in() {
+                        let attempted = request.username.is_some() || request.password.is_some();
+                        let granted = match (request.username.as_deref(), request.password.as_deref())
+                        {
+                            (Some(user), Some(pass)) => room.sign_in(user, pass),
+                            _ => None,
+                        };
+                        match granted {
+                            Some(template) => {
+                                caps = template.caps;
+                                role_name = template.name.clone();
+                            }
+                            None => return Ok(JoinOutcome::NeedSignIn { retry: attempted }),
+                        }
                     }
                 }
                 RoomLock::Approval => {
@@ -511,24 +758,49 @@ impl AppState {
         }
 
         let role = if opening { Role::Host } else { Role::Guest };
+        if opening {
+            // Whoever opens the room runs it.
+            caps = Capability::operator();
+            role_name = "Operator".into();
+        }
         let id = Uuid::new_v4();
-        let media = self.sanitise_media(room, role, request.media);
+        let media = self.sanitise_media(room, caps, role, request.media);
         room.participants.insert(
             id,
-            Participant { id, name, role, media, joined_at: now_millis(), outbox },
+            Participant {
+                id,
+                name,
+                role,
+                caps,
+                role_name,
+                media,
+                joined_at: now_millis(),
+                outbox,
+            },
         );
         Ok(JoinOutcome::Admitted(id, role))
     }
 
-    /// Room policy can forbid a guest from arriving with a live microphone,
-    /// so the declared state is filtered rather than trusted.
-    fn sanitise_media(&self, room: &Room, role: Role, mut media: MediaState) -> MediaState {
-        if !room.settings.guest_media && !role.can_moderate() {
+    /// Filters a declared media state through both the room's policy and the
+    /// person's own capabilities. The declared state is never trusted.
+    fn sanitise_media(
+        &self,
+        room: &Room,
+        caps: Capability,
+        role: Role,
+        mut media: MediaState,
+    ) -> MediaState {
+        let privileged = role == Role::Host || caps.moderate;
+        if !caps.mic || (!room.settings.guest_media && !privileged) {
             media.mic = false;
+        }
+        if !caps.cam || (!room.settings.guest_media && !privileged) {
             media.cam = false;
+        }
+        if !caps.screen || (!room.settings.guest_media && !privileged) {
             media.screen = false;
         }
-        if !room.settings.allow_recording && !role.can_moderate() {
+        if !room.settings.allow_recording && !privileged {
             media.recording = false;
         }
         media
@@ -544,20 +816,23 @@ impl AppState {
     ) -> Option<(ParticipantId, Role)> {
         let mut rooms = self.rooms.write().await;
         let room = rooms.get_mut(room_id)?;
-        if !room.participants.get(&actor).is_some_and(|p| p.role.can_moderate()) {
+        if !room.participants.get(&actor).is_some_and(Participant::can_moderate) {
             return None;
         }
         let index = room.waiting.iter().position(|k| k.id == target)?;
         let knocker = room.waiting.remove(index);
 
         let role = Role::Guest;
-        let media = self.sanitise_media(room, role, knocker.media);
+        let caps = Capability::attendee();
+        let media = self.sanitise_media(room, caps, role, knocker.media);
         room.participants.insert(
             knocker.id,
             Participant {
                 id: knocker.id,
                 name: knocker.name,
                 role,
+                caps,
+                role_name: "Attendee".into(),
                 media,
                 joined_at: now_millis(),
                 outbox: knocker.outbox,
@@ -576,7 +851,7 @@ impl AppState {
         let mut rooms = self.rooms.write().await;
         let room = rooms.get_mut(room_id)?;
         if let Some(actor) = by_moderator {
-            if !room.participants.get(&actor).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&actor).is_some_and(Participant::can_moderate) {
                 return None;
             }
         }

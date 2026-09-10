@@ -83,18 +83,27 @@ await guest.waitForTimeout(700);
 check("closing the board returns the grid", await host.isVisible(".stage__grid > .tile"));
 
 console.log("\n--- polls: the popup ---");
-await host.click('button[role="tab"]:has-text("Polls")');
-await host.waitForTimeout(300);
-check("guests cannot start a poll", !(await guest.isVisible('button:has-text("New poll")')));
+// Polls are started from the dock's labelled More menu, not a panel tab.
+await guest.click('.dock__btn[aria-label="More room actions"]');
+await guest.waitForTimeout(250);
+check(
+  "guests cannot start a poll",
+  !(await guest.isVisible('.dock__menu button:has-text("Start a poll")'))
+);
+await guest.keyboard.press("Escape");
 
-await host.click('button:has-text("New poll")');
+await host.click('.dock__btn[aria-label="More room actions"]');
+await host.waitForTimeout(250);
+check("the host is offered a poll in the More menu", await host.isVisible('.dock__menu button:has-text("Start a poll")'));
+await host.click('.dock__menu button:has-text("Start a poll")');
+await host.waitForSelector(".polldlg--composer");
 await host.fill('input[aria-label="Poll question"]', "Did the derivation make sense?");
 await host.fill('input[aria-label="Option 1"]', "Yes, keep going");
 await host.fill('input[aria-label="Option 2"]', "Go over it again");
 // Mark the first option as the right answer.
 await host.click('.poll__option-row:has(input[aria-label="Option 1"]) .poll__mark');
 await host.waitForTimeout(150);
-await host.click('.poll-composer button[type="submit"]');
+await host.click('.polldlg--composer button[type="submit"]');
 await guest.waitForTimeout(900);
 
 check("the poll pops up for the guest", await guest.isVisible(".polldlg"));
@@ -120,8 +129,16 @@ await guest.waitForTimeout(500);
 check("answering dismisses the popup", !(await guest.isVisible(".polldlg")));
 await host.waitForTimeout(600);
 check(
-  "the vote is counted for everyone",
-  (await host.textContent('.poll__result:has-text("Go over it again") .poll__share')) === "100%"
+  "the operator sees the vote land while the poll is open",
+  (await host.textContent(".poll__tally-head")) === "1 vote"
+);
+check(
+  "the tally shows which way it went",
+  (await host.textContent('.poll__result--live:has-text("Go over it again") .poll__share')) === "100%"
+);
+check(
+  "answerers are not shown the running tally",
+  (await guest.locator(".poll__tally").count()) === 0
 );
 
 // Back in through the chat notice to change the answer.
@@ -133,22 +150,22 @@ await guest.click('.polldlg .poll__option:has-text("Yes, keep going")');
 await host.waitForTimeout(700);
 check(
   "changing the answer replaces it rather than adding one",
-  (await host.textContent(".poll__meta .num")) === "1 vote"
+  (await host.textContent(".poll__tally-head")) === "1 vote"
 );
 check(
   "the new choice is the one counted",
-  (await host.textContent('.poll__result:has-text("Yes, keep going") .poll__share')) === "100%"
+  (await host.textContent('.poll__result--live:has-text("Yes, keep going") .poll__share')) === "100%"
 );
 
 console.log("\n--- polls: ending and revealing ---");
-await host.click('.poll__meta button:has-text("End")');
+await host.click('.polldlg__controls button:has-text("End poll")');
 await guest.waitForTimeout(600);
 await guest.click(".msg-poll");
 await guest.waitForTimeout(400);
 const closedOptions = await guest.locator(".polldlg .poll__option").count();
 check("an ended poll cannot be answered", closedOptions === 0, `${closedOptions} clickable options`);
 
-await host.click('.poll__reveal button:has-text("Show both")');
+await host.click('.polldlg__controls button:has-text("Show both")');
 await guest.waitForTimeout(800);
 await guest.click('button[role="tab"]:has-text("Chat")');
 await guest.waitForTimeout(300);

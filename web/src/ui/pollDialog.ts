@@ -8,16 +8,19 @@
 
 import { el } from "../dom";
 import { icons } from "../icons";
-import type { PollView } from "../types";
+import type { PollView, RevealMode } from "../types";
 
 export interface PollDialogHandlers {
   onVote: (poll: string, option: number) => void;
+  onClose: (poll: string) => void;
+  onReveal: (poll: string, mode: RevealMode) => void;
 }
 
 export interface PollDialogHandles {
   root: HTMLElement;
   /** Opens, or refreshes if this poll is already showing. */
   open: (poll: PollView, myVote: number | undefined) => void;
+  setCanModerate: (can: boolean) => void;
   /** Refreshes only if the given poll is the one on screen. */
   update: (poll: PollView, myVote: number | undefined) => void;
   close: () => void;
@@ -27,6 +30,7 @@ export interface PollDialogHandles {
 export function buildPollDialog(handlers: PollDialogHandlers): PollDialogHandles {
   let current: PollView | null = null;
   let myVote: number | undefined;
+  let canModerate = false;
   let lastFocused: HTMLElement | null = null;
 
   const body = el("div", { class: "polldlg__body" });
@@ -111,17 +115,84 @@ export function buildPollDialog(handlers: PollDialogHandlers): PollDialogHandles
       return button;
     });
 
+    // A moderator runs the poll from the same place everyone answers it —
+    // there is no separate panel to go and find.
+    const controls: Node[] = [];
+
+    // Whoever is running the poll needs to see it land — that is the whole
+    // reason for asking. Everyone else sees only their own choice until the
+    // results are published: a visible tally would tell the undecided which
+    // way to go.
+    const tally: Node[] = [];
+    if (canModerate && poll.open) {
+      tally.push(
+        el("div", { class: "poll__tally" }, [
+          el("span", {
+            class: "poll__tally-head num",
+            text: `${poll.total} ${poll.total === 1 ? "vote" : "votes"}`,
+          }),
+          ...poll.options.map((option, index) => {
+            const share = poll.total === 0 ? 0 : Math.round((poll.counts[index] / poll.total) * 100);
+            return el(
+              "div",
+              {
+                class: "poll__result poll__result--live",
+                "aria-label": `${option}: ${share} percent so far`,
+              },
+              [
+                el("span", { class: "poll__bar", style: `--share:${share}%`, "aria-hidden": "true" }),
+                el("span", { class: "poll__result-label", text: option }),
+                el("span", { class: "poll__share num", text: `${share}%` }),
+              ]
+            );
+          }),
+        ])
+      );
+    }
+
+    if (canModerate) {
+      if (poll.open) {
+        const end = el("button", { class: "btn btn--glass", type: "button" }, [
+          el("span", { text: "End poll" }),
+        ]);
+        end.addEventListener("click", () => handlers.onClose(poll.id));
+        controls.push(end);
+      }
+      if (!poll.revealed) {
+        const modes: { mode: RevealMode; label: string }[] = [
+          { mode: "counts", label: "Show results" },
+          ...(poll.correct !== null || !poll.open
+            ? [{ mode: "correct" as RevealMode, label: "Show answer" }]
+            : []),
+          { mode: "both", label: "Show both" },
+        ];
+        for (const entry of modes) {
+          const button = el("button", { class: "btn btn--glass", type: "button" }, [
+            el("span", { text: entry.label }),
+          ]);
+          button.addEventListener("click", () => handlers.onReveal(poll.id, entry.mode));
+          controls.push(button);
+        }
+      }
+    }
+
     body.replaceChildren(
       el("h2", { class: "polldlg__question", text: poll.question }),
       el("div", { class: "poll__options" }, options),
       el("p", {
         class: "polldlg__foot",
         text: readOnly
-          ? "This poll has ended."
+          ? poll.revealed
+            ? "Results are in the chat."
+            : "This poll has ended."
           : answered
             ? "Your answer is saved. You can change it until the poll ends."
             : "Pick one. You can change it until the poll ends.",
-      })
+      }),
+      ...tally,
+      ...(controls.length > 0
+        ? [el("div", { class: "polldlg__controls" }, controls)]
+        : [])
     );
   }
 
@@ -143,6 +214,10 @@ export function buildPollDialog(handlers: PollDialogHandlers): PollDialogHandles
       if (!current || current.id !== poll.id) return;
       current = poll;
       myVote = vote;
+      paint();
+    },
+    setCanModerate(can) {
+      canModerate = can;
       paint();
     },
     close,

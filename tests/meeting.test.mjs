@@ -70,6 +70,40 @@ check(
   (await guest.textContent(".msg__body")) === "Slides are on the shared drive."
 );
 
+console.log("\n--- attachments ---");
+// The host attaches a real file; the guest must be able to save it back out.
+const SHARED = "تمرین هفته ۴.txt";
+const BODY = "AGmeet attachment round trip\n";
+await host.setInputFiles(".composer input[type=file]", {
+  name: SHARED,
+  mimeType: "text/plain",
+  buffer: Buffer.from(BODY),
+});
+await guest.waitForTimeout(900);
+check("the attachment appears in the chat", await guest.isVisible(".msg-file"));
+check(
+  "it is named and sized",
+  (await guest.textContent(".msg-file__name")) === SHARED,
+  await guest.textContent(".msg-file__meta")
+);
+const [saved] = await Promise.all([
+  guest.waitForEvent("download", { timeout: 8000 }),
+  guest.click(".msg-file"),
+]);
+check("the guest can download it", saved.suggestedFilename() === SHARED, saved.suggestedFilename());
+const stream = await saved.createReadStream();
+const chunks = [];
+for await (const chunk of stream) chunks.push(chunk);
+check(
+  "the bytes arrive unchanged",
+  Buffer.concat(chunks).toString() === BODY,
+  JSON.stringify(Buffer.concat(chunks).toString())
+);
+check(
+  "an attachment does not put file bytes in the room history",
+  await guest.evaluate(() => !document.body.innerHTML.includes("QUdtZWV0"))
+);
+
 console.log("\n--- media state propagation ---");
 await host.click('.dock__btn[aria-label="Mute microphone"]');
 await guest.waitForTimeout(600);

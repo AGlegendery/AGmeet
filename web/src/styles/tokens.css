@@ -72,6 +72,15 @@
   /* --- Structure ---------------------------------------------------------- */
   --panel-w: 336px;
   --header-h: 64px;
+  /* How far the floating dock sits off the bottom of the stage. The stage
+     reads it too, to work out how much room to leave under the tiles. */
+  --dock-bottom: var(--s-5);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --dock-bottom: var(--s-3);
+  }
 }
 
 /* ==========================================================================
@@ -82,97 +91,84 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* Graphite, not navy: neutral greys with a trace of warmth so large fields
-     do not look like a blue screen. */
-  --ground: #0b0b0c;
-  --ground-deep: #060607;
-  --ground-raised: #141416;
+  /* --- Graphite ----------------------------------------------------------
+     A real neutral scale with explicit steps, not white at low alpha over a
+     dark ground. Alpha-over-ground is what made the interface read as a
+     translucent haze instead of a machined surface; these are the actual
+     colours, and a surface is opaque unless it has a reason not to be. */
+  --ground: #0e0e10;
+  --ground-deep: #08080a;
+  --ground-raised: #16161a;
 
-  /* Alphas are chosen so every level clears 4.5:1 on --ground-raised.
-     Anything quieter than --text-3 is decorative and must not carry meaning. */
-  --text-1: #f4f4f5;
-  --text-2: rgba(240, 240, 244, 0.68);
-  --text-3: rgba(240, 240, 244, 0.56);
-  --text-faint: rgba(240, 240, 244, 0.38);
+  --surface-1: #16161a;
+  --surface-2: #1c1c21;
+  --surface-3: #23232a;
+  --surface-4: #1a1a1f;
 
-  /* Four glass depth levels. Each step comes closer to the viewer: lighter
-     fill, more blur, brighter edge, deeper shadow. Level is a property of the
-     element's role, not of how it happens to look. */
-  --glass-1-bg: rgba(255, 255, 255, 0.032);
-  --glass-1-border: rgba(255, 255, 255, 0.07);
-  --glass-1-blur: 20px;
+  --line: #2b2b33;
+  --line-strong: #3a3a45;
 
-  --glass-2-bg: rgba(255, 255, 255, 0.05);
-  --glass-2-border: rgba(255, 255, 255, 0.095);
-  --glass-2-blur: 32px;
+  --text-1: #f2f2f4;
+  --text-2: #b4b4bd;
+  --text-3: #9494a0;
+  --text-faint: #6e6e7a;
 
-  --glass-3-bg: rgba(24, 24, 27, 0.74);
-  --glass-3-border: rgba(255, 255, 255, 0.11);
-  --glass-3-blur: 40px;
+  /* Surfaces are solid. The four levels are still four levels — they differ
+     by lightness and border, which is how a real material stack reads. */
+  --glass-1-bg: var(--surface-1);
+  --glass-1-border: var(--line);
+  --glass-1-blur: 0px;
 
-  --glass-4-bg: rgba(20, 20, 23, 0.84);
-  --glass-4-border: rgba(255, 255, 255, 0.14);
-  --glass-4-blur: 44px;
+  --glass-2-bg: var(--surface-2);
+  --glass-2-border: var(--line);
+  --glass-2-blur: 0px;
 
-  /* The 1px inner highlight along the top edge is what reads as refraction
-     rather than as a flat translucent rectangle. */
-  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --glass-3-bg: var(--surface-3);
+  --glass-3-border: var(--line-strong);
+  --glass-3-blur: 0px;
 
-  /* Shadows are tinted to the ground, never neutral black. */
-  --shadow-1: 0 2px 8px -2px rgba(0, 0, 0, 0.55);
-  --shadow-2: 0 12px 32px -12px rgba(0, 0, 0, 0.72);
-  --shadow-3: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
-  --shadow-4: 0 32px 80px -24px rgba(0, 0, 0, 0.88);
+  --glass-4-bg: var(--surface-4);
+  --glass-4-border: var(--line-strong);
+  --glass-4-blur: 0px;
 
-  --glow-accent: 0 0 0 1px rgba(139, 92, 246, 0.5), 0 0 28px -6px rgba(139, 92, 246, 0.45);
+  /* No drop shadows anywhere. Depth comes from lightness and a 1px line. */
+  --edge-light: none;
+  --edge-light-strong: none;
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --shadow-4: none;
 
-  /* Field surfaces: inputs, wells, tracks. */
-  --field-bg: rgba(255, 255, 255, 0.045);
-  --field-bg-hover: rgba(255, 255, 255, 0.065);
-  --hover-wash: rgba(255, 255, 255, 0.055);
-  --divider: rgba(255, 255, 255, 0.08);
+  --glow-accent: none;
 
-  /* The stage's own surface, painted as a child so the glass renderer can
-     sample it (see .stage__ground). */
-  --stage-ground:
-    radial-gradient(34% 26% at 50% 96%, rgba(139, 92, 246, 0.15), transparent 70%),
-    radial-gradient(58% 58% at 18% 12%, rgba(139, 92, 246, 0.1), transparent 66%),
-    radial-gradient(52% 56% at 86% 92%, rgba(255, 255, 255, 0.035), transparent 62%),
-    linear-gradient(158deg, #141416 0%, #0e0e10 60%, #0a0a0b 100%);
+  --field-bg: #101014;
+  --field-bg-hover: #14141a;
+  --hover-wash: #1f1f26;
+  --divider: var(--line);
 
-  /* Page atmosphere. */
-  --atmosphere:
-    radial-gradient(46% 40% at 18% 8%, rgba(139, 92, 246, 0.14), transparent 62%),
-    radial-gradient(42% 46% at 88% 92%, rgba(255, 255, 255, 0.05), transparent 60%);
-  --grain-opacity: 0.028;
+  --stage-ground: linear-gradient(168deg, #141418 0%, #101014 100%);
+  --atmosphere: none;
+  --grain-opacity: 0;
 
-  /* Video tiles and the whiteboard, which must stay dark in both themes:
-     a light frame around a camera feed is glare, and light ink on a dark
-     board is what a projector actually shows well. */
-  --tile-bg: linear-gradient(155deg, #1a1a1d, #0d0d0f);
-  --board-bg: linear-gradient(160deg, #141417, #0d0d0f);
-  --board-grid: rgba(244, 244, 245, 0.075);
+  --tile-bg: #17171c;
+  --board-bg: #131318;
+  --board-grid: rgba(242, 242, 244, 0.07);
 
-  /* Accent applied to a surface, an edge, or text on that surface. Deriving
-     these once is what lets a component say "accent wash" instead of naming
-     a violet, and is why the light theme needs no component overrides. */
-  --accent-wash: rgba(139, 92, 246, 0.16);
-  --accent-wash-soft: rgba(139, 92, 246, 0.08);
-  --accent-wash-hover: rgba(139, 92, 246, 0.24);
-  --accent-edge: rgba(139, 92, 246, 0.32);
-  --accent-edge-strong: rgba(139, 92, 246, 0.55);
-  --accent-glow: rgba(139, 92, 246, 0.6);
-  --accent-text: #ddd6fe;
+  /* Violet is the secondary: it marks action and state and nothing else. */
+  --accent-wash: #2a2338;
+  --accent-wash-soft: #201c2b;
+  --accent-wash-hover: #362c4a;
+  --accent-edge: #4a3a6b;
+  --accent-edge-strong: #6d4fb0;
+  --accent-glow: none;
+  --accent-text: #c4aeff;
 
-  --signal-wash: rgba(244, 63, 94, 0.14);
-  --signal-edge: rgba(244, 63, 94, 0.32);
-  --signal-text: #fecdd3;
+  --signal-wash: #35191f;
+  --signal-edge: #6b2b38;
+  --signal-text: #ff9fb0;
 
-  /* A dark scrim for labels that sit on video. Unchanged between themes:
-     the thing underneath is a camera feed either way. */
-  --scrim: rgba(9, 9, 11, 0.62);
-  --scrim-ink: #f4f4f5;
+  --scrim: rgba(9, 9, 11, 0.72);
+  --scrim-ink: #f2f2f4;
 }
 
 /* ==========================================================================
@@ -186,84 +182,84 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --accent: #7c3aed;
-  --accent-bright: #6d28d9;
-  --accent-dim: #5b21b6;
+  --accent: #6d28d9;
+  --accent-bright: #5b21b6;
+  --accent-dim: #4c1d95;
   --accent-ink: #ffffff;
-  --signal: #e11d48;
-  --positive: #059669;
-  --caution: #b45309;
+  --signal: #be123c;
+  --positive: #047857;
+  --caution: #a16207;
 
-  --ground: #f4f4f5;
-  --ground-deep: #e8e8ea;
+  --ground: #f2f2f3;
+  --ground-deep: #e4e4e7;
   --ground-raised: #ffffff;
 
-  --text-1: #18181b;
-  --text-2: rgba(24, 24, 27, 0.72);
-  --text-3: rgba(24, 24, 27, 0.62);
-  --text-faint: rgba(24, 24, 27, 0.42);
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #ffffff;
+  --surface-4: #ffffff;
 
-  --glass-1-bg: rgba(255, 255, 255, 0.62);
-  --glass-1-border: rgba(24, 24, 27, 0.08);
-  --glass-1-blur: 20px;
+  --line: #dededf;
+  --line-strong: #c9c9cc;
 
-  --glass-2-bg: rgba(255, 255, 255, 0.74);
-  --glass-2-border: rgba(24, 24, 27, 0.1);
-  --glass-2-blur: 32px;
+  --text-1: #17171a;
+  --text-2: #52525b;
+  --text-3: #65656e;
+  --text-faint: #8a8a93;
 
-  --glass-3-bg: rgba(255, 255, 255, 0.88);
-  --glass-3-border: rgba(24, 24, 27, 0.12);
-  --glass-3-blur: 40px;
+  --glass-1-bg: var(--surface-1);
+  --glass-1-border: var(--line);
+  --glass-1-blur: 0px;
 
-  --glass-4-bg: rgba(255, 255, 255, 0.92);
-  --glass-4-border: rgba(24, 24, 27, 0.14);
-  --glass-4-blur: 44px;
+  --glass-2-bg: var(--surface-2);
+  --glass-2-border: var(--line);
+  --glass-2-blur: 0px;
 
-  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 1);
+  --glass-3-bg: var(--surface-3);
+  --glass-3-border: var(--line-strong);
+  --glass-3-blur: 0px;
 
-  --shadow-1: 0 2px 8px -2px rgba(24, 24, 27, 0.1);
-  --shadow-2: 0 12px 32px -12px rgba(24, 24, 27, 0.18);
-  --shadow-3: 0 24px 60px -20px rgba(24, 24, 27, 0.22);
-  --shadow-4: 0 32px 80px -24px rgba(24, 24, 27, 0.26);
+  --glass-4-bg: var(--surface-4);
+  --glass-4-border: var(--line-strong);
+  --glass-4-blur: 0px;
 
-  --glow-accent: 0 0 0 1px rgba(124, 58, 237, 0.4), 0 0 28px -8px rgba(124, 58, 237, 0.4);
+  --edge-light: none;
+  --edge-light-strong: none;
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --shadow-4: none;
+  --glow-accent: none;
 
-  --field-bg: rgba(24, 24, 27, 0.04);
-  --field-bg-hover: rgba(24, 24, 27, 0.065);
-  --hover-wash: rgba(24, 24, 27, 0.05);
-  --divider: rgba(24, 24, 27, 0.1);
+  --field-bg: #f4f4f5;
+  --field-bg-hover: #ebebed;
+  --hover-wash: #f0f0f2;
+  --divider: var(--line);
 
-  --stage-ground:
-    radial-gradient(34% 26% at 50% 96%, rgba(124, 58, 237, 0.09), transparent 70%),
-    radial-gradient(58% 58% at 18% 12%, rgba(124, 58, 237, 0.06), transparent 66%),
-    linear-gradient(158deg, #ffffff 0%, #f6f6f7 60%, #efeff1 100%);
-
-  --atmosphere:
-    radial-gradient(46% 40% at 18% 8%, rgba(124, 58, 237, 0.1), transparent 62%),
-    radial-gradient(42% 46% at 88% 92%, rgba(24, 24, 27, 0.04), transparent 60%);
-  --grain-opacity: 0.02;
+  --stage-ground: linear-gradient(168deg, #ffffff 0%, #f6f6f7 100%);
+  --atmosphere: none;
+  --grain-opacity: 0;
 
   /* Deliberately unchanged: a camera feed and a whiteboard both read better
      on a dark ground, whatever the rest of the interface is doing. */
-  --tile-bg: linear-gradient(155deg, #1a1a1d, #0d0d0f);
-  --board-bg: linear-gradient(160deg, #141417, #0d0d0f);
-  --board-grid: rgba(244, 244, 245, 0.075);
+  --tile-bg: #17171c;
+  --board-bg: #131318;
+  --board-grid: rgba(242, 242, 244, 0.07);
 
-  --accent-wash: rgba(124, 58, 237, 0.11);
-  --accent-wash-soft: rgba(124, 58, 237, 0.055);
-  --accent-wash-hover: rgba(124, 58, 237, 0.18);
-  --accent-edge: rgba(124, 58, 237, 0.28);
-  --accent-edge-strong: rgba(124, 58, 237, 0.5);
-  --accent-glow: rgba(124, 58, 237, 0.4);
-  --accent-text: #6d28d9;
+  --accent-wash: #f1ecfd;
+  --accent-wash-soft: #f7f4fe;
+  --accent-wash-hover: #e6dcfb;
+  --accent-edge: #d3c3f7;
+  --accent-edge-strong: #a884f0;
+  --accent-glow: none;
+  --accent-text: #5b21b6;
 
-  --signal-wash: rgba(225, 29, 72, 0.1);
-  --signal-edge: rgba(225, 29, 72, 0.28);
-  --signal-text: #be123c;
+  --signal-wash: #fdeaee;
+  --signal-edge: #f3c2cd;
+  --signal-text: #9f1239;
 
-  --scrim: rgba(9, 9, 11, 0.62);
-  --scrim-ink: #f4f4f5;
+  --scrim: rgba(9, 9, 11, 0.72);
+  --scrim-ink: #f2f2f4;
 }
 
 /* Honour the OS setting rather than only trimming durations: anything that
@@ -280,23 +276,6 @@
 /* Some browsers and low-power devices drop backdrop-filter. Without it the
    translucent fills would let text sit on video, so the surfaces become
    opaque instead of merely less blurred. */
-@supports not (backdrop-filter: blur(1px)) {
-  :root,
-  :root[data-theme="dark"] {
-    --glass-1-bg: #161618;
-    --glass-2-bg: #1a1a1d;
-    --glass-3-bg: #18181b;
-    --glass-4-bg: #141417;
-  }
-
-  :root[data-theme="light"] {
-    --glass-1-bg: #ffffff;
-    --glass-2-bg: #ffffff;
-    --glass-3-bg: #ffffff;
-    --glass-4-bg: #ffffff;
-  }
-}
-
 /* ==========================================================================
    Glass tiers
    --------------------------------------------------------------------------
@@ -304,46 +283,12 @@
    measured frame rate (see src/glass.ts). It only ever moves downward.
    ========================================================================== */
 
-/* Weak clients: the translucency goes entirely. Not "less blur" — blur is
-   the expensive part, and a 2px blur costs nearly what a 32px one does while
-   looking like a mistake. Flat, opaque, legible, cheap. */
-:root[data-glass="minimal"] {
-  --glass-1-bg: #141416;
-  --glass-2-bg: #1a1a1d;
-  --glass-3-bg: #18181b;
-  --glass-4-bg: #141417;
-  --glass-1-blur: 0px;
-  --glass-2-blur: 0px;
-  --glass-3-blur: 0px;
-  --glass-4-blur: 0px;
-}
-
-:root[data-glass="minimal"][data-theme="light"] {
-  --glass-1-bg: #ffffff;
-  --glass-2-bg: #ffffff;
-  --glass-3-bg: #ffffff;
-  --glass-4-bg: #ffffff;
-}
-
+/* Surfaces are solid at every tier, so `minimal` only has to stand down the
+   two things that actually cost frames. */
 :root[data-glass="minimal"] .glass-1,
 :root[data-glass="minimal"] .glass-2,
 :root[data-glass="minimal"] .glass-3,
-:root[data-glass="minimal"] .glass-4,
-:root[data-glass="minimal"] .tile__name,
-:root[data-glass="minimal"] .tip::after,
-:root[data-glass="minimal"] .reaction,
-:root[data-glass="minimal"] .board__readonly {
+:root[data-glass="minimal"] .glass-4 {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-/* The atmospheric pools are a large blurred paint; on a machine already
-   short of GPU they are pure cost. */
-:root[data-glass="minimal"] body::before {
-  filter: none;
-  opacity: 0.55;
-}
-
-:root[data-glass="minimal"] body::after {
-  display: none;
 }

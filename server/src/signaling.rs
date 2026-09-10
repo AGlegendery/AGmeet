@@ -15,7 +15,10 @@ use uuid::Uuid;
 use crate::protocol::{
     ChatKind, ChatMessage, ClientMessage, ModAction, ParticipantId, RevealMode, Role, ServerMessage,
 };
-use crate::room::{now_millis, AppState, JoinError, JoinOutcome, JoinRequest};
+use crate::room::{
+    now_millis, AppState, JoinError, JoinOutcome, JoinRequest, Participant, MAX_FILE_BYTES,
+    MAX_FILE_NAME_LEN,
+};
 
 /// Longest chat message accepted, in characters.
 const MAX_CHAT_LEN: usize = 2000;
@@ -73,8 +76,8 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
         };
 
         match (&session, parsed) {
-            (None, ClientMessage::Join { room, name, create, passcode, media }) => {
-                let request = JoinRequest { name, create, passcode, media };
+            (None, ClientMessage::Join { room, name, create, passcode, username, password, media }) => {
+                let request = JoinRequest { name, create, passcode, username, password, media };
                 match state.join(&room, request, outbox.clone()).await {
                     Ok(JoinOutcome::Admitted(id, role)) => {
                         session = Some((room.clone(), id));
@@ -91,6 +94,9 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
                         let _ = outbox.send(ServerMessage::NeedPasscode { retry });
                         // Deliberately not closed: the client re-sends Join
                         // with the passcode on the same socket.
+                    }
+                    Ok(JoinOutcome::NeedSignIn { retry }) => {
+                        let _ = outbox.send(ServerMessage::NeedSignIn { retry });
                     }
                     Ok(JoinOutcome::Missing) => {
                         let _ = outbox.send(ServerMessage::RoomMissing);
@@ -148,9 +154,13 @@ async fn announce_join(state: &AppState, room_id: &str, id: ParticipantId, role:
     let Some(participant) = room.participants.get(&id) else { return };
 
     let view = participant.view();
+    let mut snapshot = room.view();
+    if participant.can_moderate() {
+        snapshot.roster = room.roster();
+    }
     let _ = participant.outbox.send(ServerMessage::Welcome {
         you: id,
-        room: room.view(),
+        room: snapshot,
         ice_servers: state.config.ice_servers.clone(),
     });
 
@@ -221,6 +231,9 @@ async fn handle(
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
             let Some(sender) = room.participants.get(&id) else { return true };
+            if !sender.caps.chat {
+                return true;
+            }
 
             let message = ChatMessage {
                 id: Uuid::new_v4(),
@@ -231,9 +244,97 @@ async fn handle(
                 at: now_millis(),
                 kind: ChatKind::Text,
                 poll: None,
+                file: None,
             };
             room.push_chat(message.clone());
             room.broadcast(&ServerMessage::Chat { message });
+            true
+        }
+
+        ClientMessage::File { name, mime, data } => {
+            // Bounded before the room lock is taken: a file too big to keep is
+            // not worth blocking everybody else's messages to reject.
+            if data.is_empty() || data.len() > MAX_FILE_BYTES {
+                return true;
+            }
+            // The name is shown, and it is also the name the browser saves
+            // under. Strip anything path-like so it can only ever be a name.
+            let name: String = name
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_FILE_NAME_LEN)
+                .collect();
+            if name.is_empty() {
+                return true;
+            }
+            // The browser decides what to do with the bytes from this, so an
+            // arbitrary string from a client has no business being in it.
+            let mime: String = mime
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || "/.+-".contains(*c))
+                .take(80)
+                .collect();
+            let mime = if mime.is_empty() { "application/octet-stream".to_string() } else { mime };
+
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            let Some(sender) = room.participants.get(&id) else { return true };
+            // Attaching is its own capability: a room can let everyone talk
+            // without letting everyone hand out files.
+            if !sender.caps.chat || !sender.caps.upload {
+                room.send_to(
+                    id,
+                    ServerMessage::Error {
+                        message: "Your role cannot attach files.".to_string(),
+                    },
+                );
+                return true;
+            }
+            let author = sender.name.clone();
+            let role = sender.role;
+
+            let meta = room.store_file(name, mime, data);
+            let message = ChatMessage {
+                id: Uuid::new_v4(),
+                from: id,
+                author,
+                role,
+                body: String::new(),
+                at: now_millis(),
+                kind: ChatKind::File,
+                poll: None,
+                file: Some(meta),
+            };
+            room.push_chat(message.clone());
+            room.broadcast(&ServerMessage::Chat { message });
+            true
+        }
+
+        ClientMessage::FileGet { file } => {
+            let rooms = state.rooms.read().await;
+            let Some(room) = rooms.get(room_id) else { return true };
+            let Some(participant) = room.participants.get(&id) else { return true };
+            // Being in the room is the permission: everyone here already sees
+            // the line, so everyone here can open what it points at.
+            if !participant.caps.chat {
+                return true;
+            }
+            let answer = match room.file(file) {
+                Some(stored) => ServerMessage::FileData {
+                    file,
+                    name: stored.name.clone(),
+                    mime: stored.mime.clone(),
+                    data: stored.data.clone(),
+                },
+                None => ServerMessage::Error {
+                    message: "That attachment is no longer held by the room.".to_string(),
+                },
+            };
+            room.send_to(id, answer);
             true
         }
 
@@ -242,13 +343,20 @@ async fn handle(
             let Some(room) = rooms.get_mut(room_id) else { return true };
             let settings = room.settings;
             let Some(participant) = room.participants.get_mut(&id) else { return true };
-            let privileged = participant.role.can_moderate();
+            let privileged = participant.role == Role::Host || participant.caps.moderate;
+            let caps = participant.caps;
 
-            // A client that hides these controls is a convenience. This is
-            // the enforcement.
-            if !settings.guest_media && !privileged {
+            // A client that hides these controls is a convenience. This is the
+            // enforcement, and it applies the person's own capabilities as
+            // well as the room's policy: a presenter with no microphone
+            // cannot declare one by editing a message.
+            if !caps.mic || (!settings.guest_media && !privileged) {
                 media.mic = false;
+            }
+            if !caps.cam || (!settings.guest_media && !privileged) {
                 media.cam = false;
+            }
+            if !caps.screen || (!settings.guest_media && !privileged) {
                 media.screen = false;
             }
             if !settings.allow_recording && !privileged {
@@ -293,8 +401,11 @@ async fn handle(
 
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            let Some(role) = room.participants.get(&id).map(|p| p.role) else { return true };
-            if room.board.locked && !role.can_moderate() {
+            let Some(participant) = room.participants.get(&id) else { return true };
+            // The board's lock is lifted by the board capability, which is
+            // what makes an operator template different from a presenter one.
+            let may_draw = !room.board.locked || participant.can_moderate() || participant.caps.board;
+            if !may_draw {
                 return true;
             }
             if !room.board.append(id, stroke, color, width, erase, points.clone()) {
@@ -321,7 +432,7 @@ async fn handle(
         ClientMessage::BoardClear => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
                 return true;
             }
             room.board.clear();
@@ -332,7 +443,7 @@ async fn handle(
         ClientMessage::BoardOpen { open } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
                 return true;
             }
             // A room created without a whiteboard does not grow one.
@@ -347,7 +458,7 @@ async fn handle(
         ClientMessage::BoardLock { locked } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
                 return true;
             }
             room.board.locked = locked;
@@ -359,7 +470,7 @@ async fn handle(
         ClientMessage::PollCreate { question, options, correct } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
                 return true;
             }
             let author = room.participants.get(&id).map(|p| (p.name.clone(), p.role));
@@ -378,6 +489,7 @@ async fn handle(
                             at: now_millis(),
                             kind: ChatKind::PollStarted,
                             poll: Some(poll_id),
+                            file: None,
                         };
                         room.push_chat(message.clone());
                         room.broadcast(&ServerMessage::Chat { message });
@@ -407,7 +519,7 @@ async fn handle(
         ClientMessage::PollClose { poll: poll_id } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
                 return true;
             }
             let Some(poll) = room.polls.iter_mut().find(|p| p.id == poll_id) else { return true };
@@ -448,6 +560,7 @@ async fn handle(
                 at: now_millis(),
                 kind: ChatKind::PollResults,
                 poll: Some(poll_id),
+                file: None,
             };
             room.push_chat(message.clone());
             room.broadcast(&ServerMessage::Chat { message });
@@ -476,11 +589,67 @@ async fn handle(
             true
         }
 
+        // ----------------------------------------------------------- roster
+        ClientMessage::TemplateSave { template } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
+                return true;
+            }
+            if room.save_template(template) {
+                broadcast_roster(room);
+            }
+            true
+        }
+
+        ClientMessage::TemplateDelete { id: template_id } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
+                return true;
+            }
+            if room.delete_template(&template_id) {
+                broadcast_roster(room);
+            }
+            true
+        }
+
+        ClientMessage::AccountSave { account } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
+                return true;
+            }
+            if room.save_account(&account) {
+                broadcast_roster(room);
+            } else {
+                room.send_to(
+                    id,
+                    ServerMessage::Error {
+                        message: "That account needs a username, a password and a role.".into(),
+                    },
+                );
+            }
+            true
+        }
+
+        ClientMessage::AccountDelete { username } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
+                return true;
+            }
+            if room.delete_account(&username) {
+                broadcast_roster(room);
+            }
+            true
+        }
+
         // ------------------------------------------------------- room policy
         ClientMessage::Settings { whiteboard, guest_media, allow_recording } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
-            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+            if !room.participants.get(&id).is_some_and(Participant::can_moderate) {
                 return true;
             }
             if let Some(value) = whiteboard {
@@ -523,6 +692,12 @@ async fn handle(
             true
         }
     }
+}
+
+/// The roster is management detail: only moderators receive it.
+fn broadcast_roster(room: &crate::room::Room) {
+    let roster = room.roster();
+    room.notify_moderators(&ServerMessage::RosterChanged { roster });
 }
 
 /// Turns a revealed poll into the line that goes into the chat.

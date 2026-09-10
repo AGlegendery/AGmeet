@@ -36,6 +36,15 @@ export class Stage {
   private readonly emptyState: HTMLElement;
 
   private tiles = new Map<string, Tile>();
+  /**
+   * Streams that arrived before the tile existed.
+   *
+   * A screen share sets its track and only then publishes the media state
+   * that creates the tile, and a remote track can beat its `media` message
+   * over the wire. Dropping the stream in that window is why sharing a
+   * screen showed nothing.
+   */
+  private pending = new Map<string, MediaStream | null>();
   private participants: Participant[] = [];
   private selfId: ParticipantId | null = null;
   private speaking = new Set<ParticipantId>();
@@ -113,6 +122,7 @@ export class Stage {
       if (!wanted.has(key)) {
         tile.root.remove();
         this.tiles.delete(key);
+        this.pending.delete(key);
       }
     }
 
@@ -147,7 +157,7 @@ export class Stage {
     const badges = el("div", { class: "tile__badges" });
     const hand = el("span", { class: "tile__hand", html: icons.hand, hidden: true });
 
-    const root = el("div", { class: "tile" }, [
+    const root = el("div", { class: "tile tile--entering" }, [
       video,
       placeholder,
       badges,
@@ -156,9 +166,18 @@ export class Stage {
     ]);
     nameLabel.append(mutedMark);
 
+    root.addEventListener("animationend", () => root.classList.remove("tile--entering"), {
+      once: true,
+    });
+
     const tile: Tile = { root, video, placeholder, nameLabel, mutedMark, hand, badges, stream: null };
     this.tiles.set(key, tile);
     this.paintTile(tile, participant, isScreen);
+    // Drain anything that arrived while this tile did not exist.
+    if (this.pending.has(key)) {
+      this.attach(tile, this.pending.get(key) ?? null);
+      this.pending.delete(key);
+    }
     return tile;
   }
 
@@ -210,7 +229,15 @@ export class Stage {
   setStream(id: ParticipantId, slot: "camera" | "screen", stream: MediaStream | null): void {
     const key = slot === "screen" ? screenKey(id) : id;
     const tile = this.tiles.get(key);
-    if (!tile) return;
+    if (!tile) {
+      // Held until the tile appears, rather than thrown away.
+      this.pending.set(key, stream);
+      return;
+    }
+    this.attach(tile, stream);
+  }
+
+  private attach(tile: Tile, stream: MediaStream | null): void {
     tile.stream = stream;
     if (tile.video.srcObject !== stream) {
       tile.video.srcObject = stream;
@@ -285,9 +312,41 @@ export class Stage {
       this.grid.style.removeProperty("--tile-w");
       this.grid.style.removeProperty("--tile-h");
     } else {
-      this.grid.replaceChildren(...this.orderedTiles().map((t) => t.root));
+      // Reconcile rather than replace. `replaceChildren` detaches every tile,
+      // and re-attaching a <video> restarts playback and re-runs the entrance
+      // animation — which is why toggling a microphone made the whole stage
+      // appear to reload.
+      this.reconcile(this.orderedTiles().map((t) => t.root));
       this.relayout();
     }
+  }
+
+  /**
+   * Brings the grid's children into the wanted order with the fewest possible
+   * moves, leaving untouched nodes attached.
+   */
+  private reconcile(wanted: HTMLElement[]): void {
+    const current = [...this.grid.children] as HTMLElement[];
+    let identical = current.length === wanted.length;
+    if (identical) {
+      for (let i = 0; i < wanted.length; i += 1) {
+        if (current[i] !== wanted[i]) {
+          identical = false;
+          break;
+        }
+      }
+    }
+    if (identical) return;
+
+    for (const node of current) {
+      if (!wanted.includes(node)) node.remove();
+    }
+    // insertBefore on a node already in position is a no-op in every engine,
+    // so this does not disturb the tiles that have not moved.
+    wanted.forEach((node, index) => {
+      const at = this.grid.children[index];
+      if (at !== node) this.grid.insertBefore(node, at ?? null);
+    });
   }
 
   /** Self first, then join order; the server already sorts the list. */

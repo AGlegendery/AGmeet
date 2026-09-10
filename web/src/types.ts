@@ -13,7 +13,49 @@ export interface MediaState {
   recording: boolean;
 }
 
-export type RoomLock = "open" | "passcode" | "approval";
+export type RoomLock = "open" | "passcode" | "approval" | "accounts";
+
+/**
+ * What one person may do. Separate from `Role`, which is about who owns the
+ * room: a presenter and an attendee are both guests.
+ */
+export interface Capability {
+  mic: boolean;
+  cam: boolean;
+  /** Screen sharing, which is also how slides are presented. */
+  screen: boolean;
+  /** Draw on the whiteboard even while it is locked. */
+  board: boolean;
+  chat: boolean;
+  /** Attach files to chat. Off for ordinary attendees. */
+  upload: boolean;
+  /** Run the room. */
+  moderate: boolean;
+}
+
+export interface RoleTemplate extends Capability {
+  id: string;
+  name: string;
+  /** Built-ins cannot be edited or deleted. */
+  builtin: boolean;
+}
+
+export interface AccountSpec {
+  username: string;
+  password: string;
+  role: string;
+}
+
+export interface AccountView {
+  username: string;
+  role: string;
+  roleName: string;
+}
+
+export interface RosterView {
+  templates: RoleTemplate[];
+  accounts: AccountView[];
+}
 
 /** Room policy, fixed when the room is opened and adjustable by moderators. */
 export interface RoomSettings {
@@ -32,6 +74,10 @@ export interface CreateOptions {
   allowRecording: boolean;
   lock: RoomLock;
   passcode?: string;
+  /** Custom role templates, on top of the built-ins. */
+  templates?: RoleTemplate[];
+  /** Accounts, for the `accounts` lock. */
+  accounts?: AccountSpec[];
 }
 
 export type RevealMode = "counts" | "correct" | "both";
@@ -40,11 +86,24 @@ export interface Participant extends MediaState {
   id: ParticipantId;
   name: string;
   role: Role;
+  caps: Capability;
+  /** The template they came in under. */
+  roleName: string;
   joinedAt: number;
 }
 
 /** Polls announce themselves in the chat, so a line is not always text. */
-export type ChatKind = "text" | "pollStarted" | "pollResults";
+export type ChatKind = "text" | "pollStarted" | "pollResults" | "file";
+
+/** How an attachment is listed. The bytes are fetched only when asked for. */
+export interface FileMeta {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  /** The room's attachment budget dropped the bytes; the line remains. */
+  expired: boolean;
+}
 
 export interface ChatMessage {
   id: string;
@@ -55,6 +114,7 @@ export interface ChatMessage {
   at: number;
   kind: ChatKind;
   poll: string | null;
+  file?: FileMeta;
 }
 
 export interface Stroke {
@@ -92,6 +152,8 @@ export interface RoomView extends RoomSettings {
   chat: ChatMessage[];
   board: BoardView;
   polls: PollView[];
+  /** Only populated for moderators. */
+  roster: RosterView;
 }
 
 export type ModAction = "requestMute" | "remove" | "promoteModerator" | "demoteModerator";
@@ -103,13 +165,21 @@ export type ClientMessage =
       name: string;
       create?: CreateOptions;
       passcode?: string;
+      username?: string;
+      password?: string;
       media: MediaState;
     }
+  | { t: "templateSave"; template: RoleTemplate }
+  | { t: "templateDelete"; id: string }
+  | { t: "accountSave"; account: AccountSpec }
+  | { t: "accountDelete"; username: string }
   | { t: "admit"; id: ParticipantId }
   | { t: "deny"; id: ParticipantId }
   | { t: "settings"; whiteboard?: boolean; guestMedia?: boolean; allowRecording?: boolean }
   | { t: "signal"; to: ParticipantId; payload: unknown }
   | { t: "chat"; body: string }
+  | { t: "file"; name: string; mime: string; data: string }
+  | { t: "fileGet"; file: string }
   | ({ t: "media" } & MediaState)
   | { t: "reaction"; kind: string }
   | { t: "moderate"; target: ParticipantId; action: ModAction }
@@ -130,6 +200,7 @@ export type ServerMessage =
   | { t: "left"; id: ParticipantId }
   | { t: "signal"; from: ParticipantId; payload: SignalPayload }
   | { t: "chat"; message: ChatMessage }
+  | { t: "fileData"; file: string; name: string; mime: string; data: string }
   | ({ t: "media"; id: ParticipantId } & MediaState)
   | { t: "reaction"; id: ParticipantId; kind: string }
   | { t: "roleChanged"; id: ParticipantId; role: Role }
@@ -141,6 +212,8 @@ export type ServerMessage =
   | { t: "boardLock"; locked: boolean }
   | { t: "poll"; poll: PollView }
   | { t: "needPasscode"; retry: boolean }
+  | { t: "needSignIn"; retry: boolean }
+  | { t: "rosterChanged"; roster: RosterView }
   | { t: "knocking" }
   | { t: "knock"; id: ParticipantId; name: string; since: number }
   | { t: "knockWithdrawn"; id: ParticipantId }

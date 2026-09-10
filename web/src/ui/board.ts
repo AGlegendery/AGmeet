@@ -51,6 +51,8 @@ export interface BoardHandles {
   clear: () => void;
   setLocked: (locked: boolean) => void;
   setCanModerate: (can: boolean) => void;
+  /** May draw even while the board is locked. */
+  setCanDraw: (can: boolean) => void;
   resize: () => void;
   destroy: () => void;
 }
@@ -69,6 +71,7 @@ export function buildBoard(handlers: BoardHandlers): BoardHandles {
   let erasing = false;
   let locked = false;
   let canModerate = false;
+  let canDrawLocked = false;
 
   let active: { id: string; last: [number, number] } | null = null;
   let pending: [number, number][] = [];
@@ -177,7 +180,7 @@ export function buildBoard(handlers: BoardHandlers): BoardHandles {
   }
 
   function canDraw(): boolean {
-    return !locked || canModerate;
+    return !locked || canModerate || canDrawLocked;
   }
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -434,6 +437,10 @@ export function buildBoard(handlers: BoardHandlers): BoardHandles {
     setCanModerate(can) {
       canModerate = can;
       moderatorTools.hidden = !can;
+      paintToolbar();
+    },
+    setCanDraw(can) {
+      canDrawLocked = can;
       paintToolbar();
     },
     resize: redraw,

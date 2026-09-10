@@ -11,6 +11,16 @@ import { icons } from "../icons";
 import { formatDuration } from "../dom";
 import type { ChatMessage, ModAction, Participant, ParticipantId, Role } from "../types";
 
+/** Matches the server's own per-file limit, measured on the base64. */
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_FILE_INPUT_BYTES = Math.floor((MAX_FILE_BYTES / 4) * 3);
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export interface Knock {
   id: ParticipantId;
   name: string;
@@ -19,6 +29,12 @@ export interface Knock {
 
 export interface PanelHandlers {
   onSend: (body: string) => void;
+  /** An attachment, already read as base64. */
+  onAttach: (name: string, mime: string, data: string) => void;
+  /** Asks the room for an attachment's bytes. */
+  onFetchFile: (id: string, name: string) => void;
+  /** Something to say to the person, in their own words. */
+  onNotice: (text: string) => void;
   onModerate: (target: ParticipantId, action: ModAction) => void;
   /** Reopens a poll from its notice in the chat. */
   onOpenPoll: (poll: string) => void;
@@ -28,8 +44,11 @@ export interface PanelHandlers {
 
 export interface PanelHandles {
   root: HTMLElement;
-  setPollCount: (count: number) => void;
+  /** The chat view and its composer, so the composer can be given a real
+   *  glass surface with the message list behind it. */
+  chatSurfaces: { root: HTMLElement; composer: HTMLElement };
   setKnocks: (knocks: Knock[]) => void;
+  setChatAllowed: (chat: boolean, upload: boolean) => void;
   addMessage: (message: ChatMessage, selfId: ParticipantId) => void;
   setHistory: (messages: ChatMessage[], selfId: ParticipantId) => void;
   setParticipants: (
@@ -38,15 +57,22 @@ export interface PanelHandles {
     selfRole: Role,
     speaking: (id: ParticipantId) => boolean
   ) => void;
-  showTab: (tab: "chat" | "people" | "polls") => void;
+  showTab: (tab: "chat" | "people") => void;
   unreadBump: () => void;
 }
 
 const ROLE_LABEL: Record<Role, string> = { host: "Host", moderator: "Moderator", guest: "" };
 
-export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): PanelHandles {
+export function buildPanel(handlers: PanelHandlers): PanelHandles {
   // --- Chat --------------------------------------------------------------
-  const messages = el("div", { class: "chat scroll", role: "log", "aria-label": "Chat messages" });
+  const messages = el("div", {
+    class: "chat scroll",
+    role: "log",
+    "aria-label": "Chat messages",
+    // Tells the glass renderer to re-capture every frame: the composer floats
+    // over this, and a cached snapshot would not follow the scroll.
+    "data-dynamic": "",
+  });
   const chatEmpty = el("div", { class: "state" }, [
     el("span", { class: "state__mark", html: icons.chat }),
     el("p", { class: "state__title", text: "No messages yet" }),
@@ -91,17 +117,56 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
   });
   send.addEventListener("click", submit);
 
+  // Uploading is a capability, not a global switch: an operator may attach a
+  // file where an attendee may not.
+  const attach = el("button", {
+    class: "icon-btn",
+    type: "button",
+    "aria-label": "Attach a file",
+    "data-tip": "Attachments are not available with your role",
+    html: icons.attach,
+    disabled: true,
+  }) as HTMLButtonElement;
+
+  // The real input stays out of the layout: the icon button is the control,
+  // and this is only how the browser is asked to open a file picker.
+  const filePicker = el("input", {
+    type: "file",
+    hidden: true,
+    "aria-hidden": "true",
+    tabindex: "-1",
+  }) as HTMLInputElement;
+
+  attach.addEventListener("click", () => filePicker.click());
+  filePicker.addEventListener("change", () => {
+    const file = filePicker.files?.[0];
+    filePicker.value = "";
+    if (!file) return;
+    if (file.size > MAX_FILE_INPUT_BYTES) {
+      handlers.onNotice(`${file.name} is larger than ${formatBytes(MAX_FILE_INPUT_BYTES)}`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.addEventListener("error", () => handlers.onNotice(`Could not read ${file.name}`));
+    reader.addEventListener("load", () => {
+      // A data URL, so the base64 starts after the comma.
+      const encoded = String(reader.result ?? "");
+      const comma = encoded.indexOf(",");
+      if (comma < 0) return;
+      handlers.onAttach(
+        file.name,
+        file.type || "application/octet-stream",
+        encoded.slice(comma + 1)
+      );
+    });
+    reader.readAsDataURL(file);
+  });
+
   const composer = el("div", { class: "composer glass-2" }, [
     input,
-    el("button", {
-      class: "icon-btn",
-      type: "button",
-      "aria-label": "Attach a file",
-      title: "Attachments are not enabled on this deployment",
-      html: icons.attach,
-      disabled: true,
-    }),
+    attach,
     send,
+    filePicker,
   ]);
 
   const chatView = el("div", { class: "panel__view", role: "tabpanel", "aria-label": "Chat" }, [
@@ -121,8 +186,6 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
   const chatCount = el("span", { class: "tab__count", text: "" });
   const peopleCount = el("span", { class: "tab__count", text: "1" });
 
-  const pollCount = el("span", { class: "tab__count", text: "" });
-
   const chatTab = el("button", { class: "tab", type: "button", role: "tab", "aria-selected": "true" }, [
     el("span", { text: "Chat" }),
     chatCount,
@@ -131,20 +194,14 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
     el("span", { text: "People" }),
     peopleCount,
   ]);
-  const pollsTab = el("button", { class: "tab", type: "button", role: "tab", "aria-selected": "false" }, [
-    el("span", { text: "Polls" }),
-    pollCount,
-  ]);
-
   let unread = 0;
-  let active: "chat" | "people" | "polls" = "chat";
+  let active: "chat" | "people" = "chat";
 
-  function showTab(tab: "chat" | "people" | "polls"): void {
+  function showTab(tab: "chat" | "people"): void {
     active = tab;
     for (const [button, view, name] of [
       [chatTab, chatView, "chat"],
       [peopleTab, peopleView, "people"],
-      [pollsTab, pollsView, "polls"],
     ] as const) {
       button.setAttribute("aria-selected", String(tab === name));
       view.setAttribute("aria-hidden", String(tab !== name));
@@ -158,11 +215,10 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
 
   chatTab.addEventListener("click", () => showTab("chat"));
   peopleTab.addEventListener("click", () => showTab("people"));
-  pollsTab.addEventListener("click", () => showTab("polls"));
 
   const root = el("aside", { class: "panel glass-2", "aria-label": "Meeting context" }, [
-    el("div", { class: "panel__tabs", role: "tablist" }, [chatTab, peopleTab, pollsTab]),
-    el("div", { class: "panel__body" }, [chatView, peopleView, pollsView]),
+    el("div", { class: "panel__tabs", role: "tablist" }, [chatTab, peopleTab]),
+    el("div", { class: "panel__body" }, [chatView, peopleView]),
   ]);
 
   // --- Message rendering -------------------------------------------------
@@ -189,6 +245,40 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
         el("span", { class: "msg-poll__go", text: "Answer" }),
       ]);
       card.addEventListener("click", () => handlers.onOpenPoll(pollId));
+      lastAuthor = null;
+      return el("div", { class: "msg msg--notice" }, [card]);
+    }
+
+    // An attachment is a line in the conversation, not a separate drawer to
+    // go and look in. The bytes are pulled only when somebody wants them.
+    if (message.kind === "file" && message.file) {
+      const meta = message.file;
+      const card = el("button", {
+        class: `msg-file${meta.expired ? " msg-file--gone" : ""}`,
+        type: "button",
+        disabled: meta.expired,
+      }, [
+        el("span", { class: "msg-file__mark", html: icons.attach, "aria-hidden": "true" }),
+        el("span", { class: "msg-file__id" }, [
+          el("span", { class: "msg-file__name", text: meta.name }),
+          el("span", {
+            class: "msg-file__meta num",
+            text: meta.expired
+              ? `${message.author} · no longer held by the room`
+              : `${message.author} · ${formatBytes(meta.size)}`,
+          }),
+        ]),
+        ...(meta.expired
+          ? []
+          : [el("span", { class: "msg-file__go", text: "Download" })]),
+      ]) as HTMLButtonElement;
+      card.setAttribute(
+        "aria-label",
+        meta.expired
+          ? `${meta.name}, shared by ${message.author}, no longer available`
+          : `Download ${meta.name}, ${formatBytes(meta.size)}, shared by ${message.author}`
+      );
+      card.addEventListener("click", () => handlers.onFetchFile(meta.id, meta.name));
       lastAuthor = null;
       return el("div", { class: "msg msg--notice" }, [card]);
     }
@@ -299,7 +389,9 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
     isSpeaking: boolean
   ): HTMLElement {
     const isSelf = participant.id === selfId;
-    const label = ROLE_LABEL[participant.role];
+    // The template they signed in under says more than host/guest does: two
+    // guests can be a presenter and a viewer.
+    const label = participant.roleName || ROLE_LABEL[participant.role];
 
     const media = el("div", { class: "person__media" }, [
       el("span", {
@@ -373,6 +465,7 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
 
   return {
     root,
+    chatSurfaces: { root: chatView, composer },
     addMessage: appendMessage,
     setHistory(history, selfId) {
       lastAuthor = null;
@@ -395,8 +488,15 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
       );
     },
     showTab,
-    setPollCount(count) {
-      pollCount.textContent = count > 0 ? String(count) : "";
+    setChatAllowed(chat, upload) {
+      input.disabled = !chat;
+      input.placeholder = chat ? "Write a message" : "Your role cannot post in chat";
+      if (!chat) send.disabled = true;
+      attach.disabled = !upload;
+      attach.setAttribute(
+        "data-tip",
+        upload ? "Attach a file" : "Attachments are not available with your role"
+      );
     },
     setKnocks(list) {
       waiting.hidden = list.length === 0;

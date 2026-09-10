@@ -10,6 +10,8 @@
  * because there is nowhere else for it to go.
  */
 
+import { saveBlob } from "./dom";
+
 export interface RecordingSources {
   /** Live video elements to composite, in the order they should be laid out. */
   videos: () => HTMLVideoElement[];
@@ -206,13 +208,5 @@ export class RoomRecorder {
 
 /** Hands a finished recording to the browser's downloader. */
 export function download(recording: Recording): void {
-  const url = URL.createObjectURL(recording.blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = recording.filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  // Revoking immediately can cancel the download in some browsers.
-  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  saveBlob(recording.blob, recording.filename);
 }

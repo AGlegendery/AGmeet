@@ -12,6 +12,12 @@
   height: 100dvh;
   gap: var(--s-3);
   padding: var(--s-3);
+  /* The closed panel parks itself just off the right edge, and the overlay
+     panel is absolute. `overflow` only clips descendants whose containing
+     block is inside this element, so without `position` the parked panel was
+     laid out against the viewport and still counted toward the scroll width. */
+  position: relative;
+  overflow: hidden;
   transition: grid-template-columns var(--m-panel) var(--ease-out);
 }
 
@@ -61,17 +67,19 @@
   color: var(--text-3);
 }
 
+/* min-width:0 on both halves is load-bearing: a flex row refuses to shrink
+   below its content, and without it the header's intrinsic width pushed the
+   whole grid column past the viewport on a phone. */
 .room-header__actions {
   display: flex;
   align-items: center;
   gap: var(--s-2);
+  min-width: 0;
   margin-left: auto;
 }
 
-.room-header__menus {
-  display: flex;
-  align-items: center;
-  gap: var(--s-1);
+.header-more-wrap {
+  display: none;
 }
 
 /* The stage's fill is painted by .stage__ground, not here: the glass renderer
@@ -84,7 +92,6 @@
   border: 1px solid var(--glass-1-border);
   border-radius: var(--r-xl);
   overflow: hidden;
-  box-shadow: var(--edge-light), var(--shadow-1);
 }
 
 /* --- Context panel --------------------------------------------------------
@@ -175,8 +182,30 @@
     border-radius: var(--r-md);
   }
 
-  .room-header__actions .btn span:not([class]) {
+  /* One button stands in for the row; the rest live in its sheet. */
+  .header-more-wrap {
+    display: inline-flex;
+  }
+
+  .room-header__meta {
+    gap: var(--s-1) var(--s-2);
+  }
+
+  .room-header .brand__mark--sm {
     display: none;
+  }
+
+  /* The sheet drops from the header and is as wide as the screen allows. */
+  .header-more-wrap .popover__menu {
+    right: 0;
+    width: min(300px, calc(100vw - var(--s-6)));
+  }
+
+  .header-more-wrap .popover__menu .link-state,
+  .header-more-wrap .popover__menu .btn {
+    width: 100%;
+    justify-content: flex-start;
+    padding: var(--s-2) var(--s-3);
   }
 
   .stage {

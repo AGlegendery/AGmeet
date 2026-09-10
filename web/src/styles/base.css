@@ -36,30 +36,8 @@ body {
   overscroll-behavior: none;
 }
 
-/* --- Atmosphere ----------------------------------------------------------
-   Two slow pools of light behind everything, so the glass has something to
-   refract. Fixed and non-interactive: it never repaints with scrolling
-   content and never intercepts a pointer. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: -25%;
-  z-index: -2;
-  pointer-events: none;
-  background: var(--atmosphere);
-  filter: blur(28px);
-}
-
-/* A trace of grain stops the large gradients from banding on 8-bit panels. */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--grain-opacity);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
+/* No atmospheric wash and no grain: the ground is a flat graphite, which is
+   what makes the surfaces on top of it read as solid panels. */
 
 /* --- Type ---------------------------------------------------------------- */
 
@@ -150,51 +128,43 @@ svg {
   background-clip: content-box;
 }
 
-/* --- Glass ---------------------------------------------------------------
+/* --- Surfaces -------------------------------------------------------------
    Four levels. Pick by the element's role in the depth hierarchy:
      1  application surface
      2  floating panels
      3  dialogs and menus
-     4  critical floating controls */
+     4  critical floating controls
+
+   These are solid. Depth is lightness plus a 1px line, not translucency:
+   faking glass everywhere made the whole interface read as a haze. The few
+   surfaces that genuinely are glass get the real WebGL effect instead — see
+   src/glass.ts. */
 .glass-1,
 .glass-2,
 .glass-3,
 .glass-4 {
   position: relative;
-  border-style: solid;
-  border-width: 1px;
+  border: 1px solid;
 }
 
 .glass-1 {
   background: var(--glass-1-bg);
   border-color: var(--glass-1-border);
-  backdrop-filter: blur(var(--glass-1-blur)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-1-blur)) saturate(1.4);
-  box-shadow: var(--edge-light), var(--shadow-1);
 }
 
 .glass-2 {
   background: var(--glass-2-bg);
   border-color: var(--glass-2-border);
-  backdrop-filter: blur(var(--glass-2-blur)) saturate(1.5);
-  -webkit-backdrop-filter: blur(var(--glass-2-blur)) saturate(1.5);
-  box-shadow: var(--edge-light), var(--shadow-2);
 }
 
 .glass-3 {
   background: var(--glass-3-bg);
   border-color: var(--glass-3-border);
-  backdrop-filter: blur(var(--glass-3-blur)) saturate(1.6);
-  -webkit-backdrop-filter: blur(var(--glass-3-blur)) saturate(1.6);
-  box-shadow: var(--edge-light-strong), var(--shadow-3);
 }
 
 .glass-4 {
   background: var(--glass-4-bg);
   border-color: var(--glass-4-border);
-  backdrop-filter: blur(var(--glass-4-blur)) saturate(1.7);
-  -webkit-backdrop-filter: blur(var(--glass-4-blur)) saturate(1.7);
-  box-shadow: var(--edge-light-strong), var(--shadow-4);
 }
 
 /* --- Utilities ------------------------------------------------------------ */

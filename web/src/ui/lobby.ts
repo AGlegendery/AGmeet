@@ -29,6 +29,8 @@ export interface LobbyResult {
   room: string;
   name: string;
   create?: CreateOptions;
+  username?: string;
+  password?: string;
   mic: boolean;
   cam: boolean;
   cameraId?: string;
@@ -49,6 +51,7 @@ export type LobbyState =
   | { kind: "idle" }
   | { kind: "connecting" }
   | { kind: "passcode"; retry: boolean }
+  | { kind: "signIn"; retry: boolean }
   | { kind: "knocking" }
   | { kind: "denied"; reason: string }
   | { kind: "missing" };
@@ -56,6 +59,7 @@ export type LobbyState =
 export interface LobbyHandlers {
   onJoin: (result: LobbyResult) => void;
   onPasscode: (passcode: string) => void;
+  onSignIn: (username: string, password: string) => void;
   onBack: () => void;
 }
 
@@ -261,6 +265,39 @@ export function buildLobby(
     passcodeError,
   ]);
 
+  // Signing in with an account: the account decides what you may do once
+  // inside, so this is not the same thing as a shared passcode.
+  const usernameInput = el("input", {
+    class: "input",
+    type: "text",
+    id: "lobby-username",
+    autocomplete: "username",
+    placeholder: "Username",
+    "aria-label": "Username",
+  }) as HTMLInputElement;
+
+  const passwordInput = el("input", {
+    class: "input",
+    type: "password",
+    id: "lobby-password",
+    autocomplete: "current-password",
+    placeholder: "Password",
+    "aria-label": "Password",
+  }) as HTMLInputElement;
+
+  const signInError = el("p", { class: "field__error", hidden: true });
+  const signInField = el("div", { class: "stack", style: "gap:var(--s-3)", hidden: true }, [
+    el("div", { class: "field" }, [
+      el("label", { class: "field__label", for: "lobby-username", text: "Username" }),
+      usernameInput,
+    ]),
+    el("div", { class: "field" }, [
+      el("label", { class: "field__label", for: "lobby-password", text: "Password" }),
+      passwordInput,
+      signInError,
+    ]),
+  ]);
+
   const title = el("h1", { class: "lobby__title", text: "Join the room" });
   const subtitle = el("p", { class: "lobby__sub", text: "Check your camera and microphone before you go in." });
   const doorState = el("div", { class: "lobby__door", hidden: true });
@@ -282,11 +319,13 @@ export function buildLobby(
   function actionLabel(): string {
     if (request.create) return "Create and enter";
     if (info?.lock === "approval") return "Ask to join the room";
+    if (info?.lock === "accounts" || state.kind === "signIn") return "Sign in and join";
     return "Join the room";
   }
 
   function paintDoor(): void {
     passcodeField.hidden = !(state.kind === "passcode" || (info?.lock === "passcode" && !request.create));
+    signInField.hidden = !(state.kind === "signIn" || (info?.lock === "accounts" && !request.create));
     action.disabled = state.kind === "connecting" || state.kind === "knocking";
 
     switch (state.kind) {
@@ -316,6 +355,14 @@ export function buildLobby(
         passcodeError.hidden = !state.retry;
         passcodeError.textContent = state.retry ? "That passcode was not right." : "";
         passcodeInput.focus();
+        break;
+      case "signIn":
+        action.replaceChildren(el("span", { text: actionLabel() }));
+        doorState.hidden = true;
+        signInError.hidden = !state.retry;
+        // Deliberately does not say which half was wrong.
+        signInError.textContent = state.retry ? "That username and password did not match." : "";
+        (usernameInput.value ? passwordInput : usernameInput).focus();
         break;
       case "denied":
         action.replaceChildren(el("span", { text: actionLabel() }));
@@ -385,6 +432,7 @@ export function buildLobby(
       micSelect,
     ]),
     passcodeField,
+    signInField,
     notice,
     doorState,
     action,
@@ -394,6 +442,20 @@ export function buildLobby(
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (state.kind === "missing" || state.kind === "knocking") return;
+
+    // A challenge the server raised is answered on the socket that raised it.
+    // The very first attempt has no socket yet, so it goes through the normal
+    // join with the credentials attached.
+    if (state.kind === "signIn") {
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+      if (!username || !password) {
+        (username ? passwordInput : usernameInput).focus();
+        return;
+      }
+      handlers.onSignIn(username, password);
+      return;
+    }
 
     // A passcode challenge is answered on the socket that asked for it.
     if (state.kind === "passcode") {
@@ -406,10 +468,20 @@ export function buildLobby(
       return;
     }
 
+    const signingIn = signInField.hidden === false;
+    const username = usernameInput.value.trim();
+    if (signingIn && (!username || !passwordInput.value)) {
+      (username ? passwordInput : usernameInput).focus();
+      return;
+    }
+
     handlers.onJoin({
       room: request.room,
-      name: request.name,
+      // An account names the person: signing in as `mamad` should not also
+      // require typing a display name somewhere else.
+      name: signingIn ? username : request.name,
       create: request.create,
+      ...(signingIn ? { username, password: passwordInput.value } : {}),
       mic: wantMic && (stream?.getAudioTracks().length ?? 0) > 0,
       cam: wantCam && (stream?.getVideoTracks().length ?? 0) > 0,
       cameraId,

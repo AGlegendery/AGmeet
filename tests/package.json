@@ -6,7 +6,7 @@
   "type": "module",
   "description": "Browser tests. They drive two real Chromium peers against a running server, so they exercise the actual WebRTC path rather than a mock.",
   "scripts": {
-    "test": "node meeting.test.mjs && node classroom.test.mjs && node room.test.mjs && node glass.test.mjs && node accessibility.test.mjs"
+    "test": "node meeting.test.mjs && node classroom.test.mjs && node room.test.mjs && node accounts.test.mjs && node glass.test.mjs && node accessibility.test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.49.0"

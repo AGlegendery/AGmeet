@@ -13,7 +13,7 @@ import "./styles/layout.css";
 import "./styles/components.css";
 import "./styles/views.css";
 
-import { el, prefersReducedMotion, qs } from "./dom";
+import { decodeBase64, el, prefersReducedMotion, qs, saveBlob } from "./dom";
 import { detectTier, GlassSurfaces } from "./glass";
 import { icons } from "./icons";
 import {
@@ -28,6 +28,7 @@ import { PeerMesh } from "./rtc";
 import { Signaling } from "./signaling";
 import { initTheme } from "./theme";
 import type {
+  Capability,
   ConnectionState,
   ModAction,
   Participant,
@@ -45,6 +46,7 @@ import { buildLobby, type LobbyResult } from "./ui/lobby";
 import { buildPanel } from "./ui/panel";
 import { buildPollDialog } from "./ui/pollDialog";
 import { buildPolls } from "./ui/polls";
+import { buildRoster } from "./ui/roster";
 import { buildRoomMenu, buildThemeMenu } from "./ui/settings";
 import { buildHeader } from "./ui/shell";
 import { Stage } from "./ui/stage";
@@ -116,6 +118,15 @@ function showLobby(request: EnterRequest): void {
         lobby.setState({ kind: "connecting" });
         signaling?.retryWithPasscode(passcode);
       },
+      onSignIn: (username, password) => {
+        lobby.setState({ kind: "connecting" });
+        if (signaling) {
+          signaling.retryWithSignIn(username, password);
+        } else {
+          pending = { ...(pending as LobbyResult), name: username };
+          signaling = connect({ ...(pending as LobbyResult), username, password }, lobby.setState);
+        }
+      },
       onBack: () => {
         signaling?.close();
         showDashboard();
@@ -144,8 +155,10 @@ function showLobby(request: EnterRequest): void {
   ): Signaling {
     const socket = new Signaling({
       room: result.room,
-      name: result.name,
+      name: result.name || result.username || "",
       create: result.create,
+      username: result.username,
+      password: result.password,
       mic: result.mic,
       cam: result.cam,
     });
@@ -159,6 +172,9 @@ function showLobby(request: EnterRequest): void {
           break;
         case "needPasscode":
           setState({ kind: "passcode", retry: message.retry });
+          break;
+        case "needSignIn":
+          setState({ kind: "signIn", retry: message.retry });
           break;
         case "knocking":
           setState({ kind: "knocking" });
@@ -227,9 +243,24 @@ function startMeeting(
     }
   }
 
-  const canModerate = (): boolean => selfRole === "host" || selfRole === "moderator";
+  /** What this account is allowed to do; the room's policy narrows it further. */
+  const selfCaps = (): Capability =>
+    participants.find((p) => p.id === selfId)?.caps ?? {
+      mic: true,
+      cam: true,
+      screen: false,
+      board: false,
+      chat: true,
+      upload: false,
+      moderate: false,
+    };
+
+  const canModerate = (): boolean => selfRole === "host" || selfCaps().moderate;
   /** Room policy can forbid a guest a camera; moderators are never blocked. */
-  const mayUseMedia = (): boolean => settings.guestMedia || canModerate();
+  const roomAllowsMedia = (): boolean => settings.guestMedia || canModerate();
+  const mayUseMic = (): boolean => selfCaps().mic && roomAllowsMedia();
+  const mayUseCam = (): boolean => selfCaps().cam && roomAllowsMedia();
+  const mayShareScreen = (): boolean => selfCaps().screen && roomAllowsMedia();
   const mayRecord = (): boolean => canRecord() && (settings.allowRecording || canModerate());
 
   // ---------------------------------------------------------------- pieces
@@ -240,30 +271,31 @@ function startMeeting(
       signaling.send({ t: "pollVote", poll, option });
       polls.recordVote(poll, option);
     },
+    onClose: (poll) => signaling.send({ t: "pollClose", poll }),
+    onReveal: (poll, mode: RevealMode) => signaling.send({ t: "pollReveal", poll, mode }),
   });
 
   const polls = buildPolls({
     onCreate: (question, options, correct) =>
       signaling.send({ t: "pollCreate", question, options, correct }),
-    onVote: (poll, option) => {
-      signaling.send({ t: "pollVote", poll, option });
-      polls.recordVote(poll, option);
-    },
-    onClose: (poll) => signaling.send({ t: "pollClose", poll }),
-    onReveal: (poll, mode: RevealMode) => signaling.send({ t: "pollReveal", poll, mode }),
-    onOpen: (poll) => openPoll(poll),
   });
 
-  const panel = buildPanel(
-    {
-      onSend: (body) => signaling.send({ t: "chat", body }),
-      onModerate: (target, action) => moderate(target, action),
-      onOpenPoll: (poll) => openPoll(poll),
-      onAdmit: (id) => signaling.send({ t: "admit", id }),
-      onDeny: (id) => signaling.send({ t: "deny", id }),
+  /** Attachments this browser asked for, so the answer knows what to do. */
+  const wantedFiles = new Map<string, string>();
+
+  const panel = buildPanel({
+    onSend: (body) => signaling.send({ t: "chat", body }),
+    onAttach: (name, mime, data) => signaling.send({ t: "file", name, mime, data }),
+    onFetchFile: (file, name) => {
+      wantedFiles.set(file, name);
+      signaling.send({ t: "fileGet", file });
     },
-    polls.root
-  );
+    onNotice: (text) => toast(text, "error"),
+    onModerate: (target, action) => moderate(target, action),
+    onOpenPoll: (poll) => openPoll(poll),
+    onAdmit: (id) => signaling.send({ t: "admit", id }),
+    onDeny: (id) => signaling.send({ t: "deny", id }),
+  });
 
   const board = buildBoard({
     onDraw: (id, colour, width, erase, points) =>
@@ -280,7 +312,15 @@ function startMeeting(
     onToggleScreen: () => void toggleScreen(),
     onToggleBoard: () => toggleBoard(),
     onToggleHand: () => toggleHand(),
-    onReaction: (kind) => signaling.send({ t: "reaction", kind }),
+    onReaction: (kind) => {
+      signaling.send({ t: "reaction", kind });
+      // The server does not echo a reaction to its sender, so show it here or
+      // pressing the button appears to do nothing.
+      showReaction(kind, "You");
+    },
+    onNewPoll: () => polls.openComposer(),
+    onToggleRecording: () => (recorder.active ? void stopRecording() : startRecording()),
+    onInvite: () => void copyInvite(),
     onLeave: () => leave(),
   });
 
@@ -288,28 +328,60 @@ function startMeeting(
     () => void copyInvite(),
     () => togglePanel(),
     () => {
-      shell.dataset.panel = "open";
-      panel.showTab("people");
+      openPanel("people");
     }
   );
 
   // --- Recording ---------------------------------------------------------
   const recorder = new RoomRecorder();
 
+  // Roles and accounts, editable while the room is running. Every change goes
+  // to the server, which is the only thing that decides what anyone may do.
+  const roster = buildRoster({
+    onSaveTemplate: (template) => signaling.send({ t: "templateSave", template }),
+    onDeleteTemplate: (id) => signaling.send({ t: "templateDelete", id }),
+    onSaveAccount: (account) => signaling.send({ t: "accountSave", account }),
+    onDeleteAccount: (username) => signaling.send({ t: "accountDelete", username }),
+  });
+
+  const rosterClose = el("button", { class: "btn btn--glass btn--block", type: "button" }, [
+    el("span", { text: "Done" }),
+  ]);
+  const rosterLayer = el("div", { class: "polldlg__layer", hidden: true }, [
+    el("div", { class: "polldlg polldlg--wide glass-3", role: "dialog", "aria-modal": "true" }, [
+      el("div", { class: "polldlg__body stack", style: "gap:var(--s-4)" }, [
+        el("h2", { class: "polldlg__question", text: "Roles and accounts" }),
+        roster.root,
+        rosterClose,
+      ]),
+    ]),
+  ]);
+  rosterClose.addEventListener("click", () => {
+    rosterLayer.hidden = true;
+  });
+
   const roomMenu = buildRoomMenu({
     onSettings: (patch) => signaling.send({ t: "settings", ...patch }),
-    onStartRecording: () => startRecording(),
-    onStopRecording: () => void stopRecording(),
-  });
-  // Room policy and appearance both live in the header: the sidebar that used
-  // to hold settings is gone, and these are the only two things still worth
-  // configuring once you are inside a room.
-  header.actions.append(roomMenu.root, buildThemeMenu());
+    onManageRoster: () => {
+      rosterLayer.hidden = false;
+    },
+  }, { dock: true });
+  // Both mount in the dock, under the stage. The header says what the room is
+  // — its name, who is in it, how the connection is holding up — and the bar
+  // under the video is where you do things to it, settings included.
+  dock.settingsSlot.append(roomMenu.root, buildThemeMenu({ dock: true }));
 
   const reactionLayer = el("div", { class: "reactions", "aria-hidden": "true" });
-  stage.root.append(dock.root, reactionLayer, pollDialog.root);
+  stage.root.append(dock.root, reactionLayer, pollDialog.root, polls.root, rosterLayer);
 
-  const shell = el("div", { class: "app", "data-panel": "open" }, [
+  /**
+   * The context panel is a column beside the stage on a desktop and a
+   * full-screen sheet on a phone, so it cannot start open on both: on a
+   * phone that meant the chat covered the entire call and the video was
+   * never visible at all.
+   */
+  const narrowViewport = window.matchMedia("(max-width: 720px)");
+  const shell = el("div", { class: "app", "data-panel": narrowViewport.matches ? "closed" : "open" }, [
     el("div", { class: "meeting" }, [header.root, stage.root]),
     panel.root,
     audioHost,
@@ -319,11 +391,35 @@ function startMeeting(
 
   if (glass.currentTier === "full") {
     void glass.attach("dock", stage.root, [dock.root], { cornerRadius: 32, zRadius: 15 });
+    // The composer floats over the message list, so messages are visible
+    // passing beneath it rather than disappearing under an opaque bar.
+    void glass.attach("composer", panel.chatSurfaces.root, [panel.chatSurfaces.composer], {
+      cornerRadius: 20,
+      zRadius: 10,
+      blurAmount: 0.62,
+      refraction: 0.4,
+    });
+  }
+
+  function openPanel(tab: "chat" | "people"): void {
+    shell.dataset.panel = "open";
+    header.setPanelOpen(true);
+    panel.showTab(tab);
   }
 
   function togglePanel(): void {
-    shell.dataset.panel = shell.dataset.panel === "open" ? "closed" : "open";
+    const open = shell.dataset.panel !== "open";
+    shell.dataset.panel = open ? "open" : "closed";
+    header.setPanelOpen(open);
   }
+
+  // Crossing the breakpoint changes what the panel *is*, so it re-adopts the
+  // default for the shape it just became.
+  narrowViewport.addEventListener("change", (event) => {
+    const open = !event.matches;
+    shell.dataset.panel = open ? "open" : "closed";
+    header.setPanelOpen(open);
+  });
 
   // ------------------------------------------------------------------ mesh
   const mesh = new PeerMesh(iceServers, {
@@ -357,7 +453,10 @@ function startMeeting(
       return;
     }
     const quality = mesh.worstQuality();
-    header.setConnection(quality === "good" ? "connected" : quality === "poor" ? "poor" : "lost");
+    header.setConnection(
+      quality === "good" ? "connected" : quality === "poor" ? "poor" : "lost",
+      mesh.linkStrength()
+    );
   }
 
   signaling.onState((state) => {
@@ -396,6 +495,15 @@ function startMeeting(
         panel.addMessage(message.message, selfId);
         break;
 
+      case "fileData": {
+        // Only a file this browser actually asked for is saved: an unsolicited
+        // one would be a download nobody started.
+        if (!wantedFiles.has(message.file)) break;
+        wantedFiles.delete(message.file);
+        saveAttachment(message.name, message.mime, message.data);
+        break;
+      }
+
       case "media":
         participants = participants.map((p) =>
           p.id === message.id
@@ -413,7 +521,7 @@ function startMeeting(
         break;
 
       case "reaction":
-        showReaction(message.kind);
+        showReaction(message.kind, participants.find((p) => p.id === message.id)?.name);
         break;
 
       case "roleChanged":
@@ -470,6 +578,10 @@ function startMeeting(
         applySettings();
         break;
 
+      case "rosterChanged":
+        roster.set(message.roster.templates, message.roster.accounts);
+        break;
+
       case "knock":
         knocks = [
           ...knocks.filter((k) => k.id !== message.id),
@@ -511,25 +623,34 @@ function startMeeting(
     header.setRecording(participants.some((p) => p.recording));
 
     const moderate = canModerate();
+    // The board capability is what lets a presenter draw on a locked board
+    // without being able to run the room.
     board.setCanModerate(moderate);
-    polls.setCanModerate(moderate);
+    board.setCanDraw(moderate || selfCaps().board);
+    pollDialog.setCanModerate(moderate);
     applySettings();
   }
 
   function applySettings(): void {
     const moderate = canModerate();
     dock.setBoardAvailable(settings.whiteboard && moderate);
-    dock.setMediaAllowed(mayUseMedia());
+    dock.setMediaAllowed(mayUseMic(), mayUseCam());
     dock.setScreenAvailable(
-      typeof navigator.mediaDevices?.getDisplayMedia === "function" && mayUseMedia()
+      typeof navigator.mediaDevices?.getDisplayMedia === "function" && mayShareScreen()
     );
+    panel.setChatAllowed(selfCaps().chat, selfCaps().upload);
     roomMenu.setSettings(settings, moderate);
-    roomMenu.setRecording(recorder.active, mayRecord());
+    dock.setCapabilities({
+      moderate,
+      whiteboard: settings.whiteboard,
+      record: mayRecord(),
+      recording: recorder.active,
+    });
     header.setRoom({ ...initialRoom, ...settings, name: initialRoom.name });
 
     // Losing permission mid-room has to actually stop the hardware, not just
     // grey out a button.
-    if (!mayUseMedia() && (micOn || camOn || screenStream)) {
+    if ((!mayUseMic() || !mayUseCam()) && (micOn || camOn || screenStream)) {
       if (micOn || camOn) {
         stopStream(localStream);
         localStream = null;
@@ -589,8 +710,13 @@ function startMeeting(
 
   // ----------------------------------------------------------------- media
   function toggleMic(): void {
-    if (!mayUseMedia()) {
-      toast("The host has turned off microphones for guests", "error");
+    if (!mayUseMic()) {
+      toast(
+        selfCaps().mic
+          ? "The host has turned off microphones for guests"
+          : "Your role does not include a microphone",
+        "error"
+      );
       return;
     }
     const track = localStream?.getAudioTracks()[0];
@@ -605,8 +731,13 @@ function startMeeting(
   }
 
   function toggleCam(): void {
-    if (!mayUseMedia()) {
-      toast("The host has turned off cameras for guests", "error");
+    if (!mayUseCam()) {
+      toast(
+        selfCaps().cam
+          ? "The host has turned off cameras for guests"
+          : "Your role does not include a camera",
+        "error"
+      );
       return;
     }
     const track = localStream?.getVideoTracks()[0];
@@ -654,8 +785,13 @@ function startMeeting(
       publishMedia();
       return;
     }
-    if (!mayUseMedia()) {
-      toast("The host has turned off screen sharing for guests", "error");
+    if (!mayShareScreen()) {
+      toast(
+        selfCaps().screen
+          ? "The host has turned off screen sharing for guests"
+          : "Your role does not include presenting",
+        "error"
+      );
       return;
     }
 
@@ -664,6 +800,10 @@ function startMeeting(
       screenStream = stream;
       const track = stream.getVideoTracks()[0];
       mesh.setScreenTrack(track);
+      // Publish first: the screen tile is created from the media state, and
+      // handing the stream over before it exists is why the sharer saw
+      // nothing. The stage also holds it now, so the order is belt and braces.
+      publishMedia();
       stage.setStream(selfId, "screen", stream);
       // The browser's own "Stop sharing" bar ends the track behind our back.
       track.addEventListener("ended", () => {
@@ -672,7 +812,6 @@ function startMeeting(
         stage.setStream(selfId, "screen", null);
         publishMedia();
       });
-      publishMedia();
     } catch (error) {
       if (error instanceof MediaError && error.reason !== "denied") {
         toast(error.message, "error");
@@ -698,7 +837,6 @@ function startMeeting(
         },
       });
       publishMedia();
-      roomMenu.setRecording(true, mayRecord());
       header.setRecording(true);
       toast("Recording on this device");
     } catch (error) {
@@ -709,7 +847,6 @@ function startMeeting(
   async function stopRecording(): Promise<void> {
     const recording = await recorder.stop();
     publishMedia();
-    roomMenu.setRecording(false, mayRecord());
     if (!recording) {
       toast("Nothing was captured", "error");
       return;
@@ -736,7 +873,7 @@ function startMeeting(
     ]);
 
     const layer = el("div", { class: "polldlg__layer" }, [
-      el("div", { class: "polldlg glass-3", role: "dialog", "aria-modal": "true" }, [
+      el("div", { class: "polldlg polldlg--recording glass-3", role: "dialog", "aria-modal": "true" }, [
         el("div", { class: "polldlg__body" }, [
           el("h2", { class: "polldlg__question", text: "Recording finished" }),
           el("p", {
@@ -822,6 +959,15 @@ function startMeeting(
     signaling.send({ t: "boardOpen", open: !boardOpen });
   }
 
+  // ----------------------------------------------------------- attachments
+  function saveAttachment(name: string, mime: string, data: string): void {
+    try {
+      saveBlob(new Blob([decodeBase64(data)], { type: mime }), name);
+    } catch {
+      toast("That attachment could not be opened", "error");
+    }
+  }
+
   // ----------------------------------------------------------------- polls
   const seenPolls = new Set<string>();
 
@@ -834,7 +980,6 @@ function startMeeting(
     const isNew = !seenPolls.has(poll.id);
     seenPolls.add(poll.id);
     polls.upsert(poll);
-    panel.setPollCount(polls.count());
 
     if (isNew && poll.open) {
       // A new poll interrupts on purpose. The chat keeps the notice, so
@@ -846,14 +991,21 @@ function startMeeting(
   }
 
   // ------------------------------------------------------------- reactions
-  function showReaction(kind: string): void {
+  /**
+   * A reaction says who sent it. Anonymous icons drifting up the screen tell
+   * a room that somebody reacted, which is not the information anybody wanted.
+   */
+  function showReaction(kind: string, who?: string): void {
     const icon = icons[kind as keyof typeof icons];
     if (!icon) return;
-    const node = el("span", { class: "reaction", html: icon });
-    node.style.setProperty("--drift", `${Math.round((Math.random() - 0.5) * 90)}px`);
-    node.style.left = `${Math.round((Math.random() - 0.5) * 160)}px`;
+    const node = el("span", { class: "reaction" }, [
+      el("span", { class: "reaction__mark", html: icon }),
+      ...(who ? [el("span", { class: "reaction__who", text: who })] : []),
+    ]);
+    node.style.setProperty("--drift", `${Math.round((Math.random() - 0.5) * 70)}px`);
+    node.style.left = `${Math.round((Math.random() - 0.5) * 150)}px`;
     reactionLayer.append(node);
-    window.setTimeout(() => node.remove(), prefersReducedMotion() ? 1500 : 2700);
+    window.setTimeout(() => node.remove(), prefersReducedMotion() ? 1600 : 3000);
   }
 
   // -------------------------------------------------------------- speaking
@@ -868,7 +1020,12 @@ function startMeeting(
     }
   }, 220);
 
-  const clockTimer = window.setInterval(() => header.tick(), 1000);
+  const clockTimer = window.setInterval(() => {
+    header.tick();
+    // Latency moves between quality changes, so the reading is refreshed on
+    // the same tick as the clock rather than only when the state flips.
+    refreshConnectionState();
+  }, 1000);
 
   // -------------------------------------------------------------- keyboard
   function onKeydown(event: KeyboardEvent): void {
@@ -891,18 +1048,15 @@ function startMeeting(
         break;
       case "c":
         event.preventDefault();
-        shell.dataset.panel = "open";
-        panel.showTab("chat");
+        openPanel("chat");
         break;
       case "p":
         event.preventDefault();
-        shell.dataset.panel = "open";
-        panel.showTab("people");
+        openPanel("people");
         break;
       case "o":
         event.preventDefault();
-        shell.dataset.panel = "open";
-        panel.showTab("polls");
+        if (canModerate()) polls.openComposer();
         break;
       case "b":
         event.preventDefault();
@@ -921,6 +1075,7 @@ function startMeeting(
     document.removeEventListener("keydown", onKeydown);
     localDetector.detach();
     glass.detach("dock");
+    glass.detach("composer");
     glass.detach("boardToolbar");
     board.destroy();
     mesh.destroy();
@@ -950,7 +1105,7 @@ function startMeeting(
   board.setLocked(initialRoom.board.locked);
   applyBoardOpen(initialRoom.board.open);
   polls.setPolls(initialRoom.polls);
-  panel.setPollCount(initialRoom.polls.length);
+  roster.set(initialRoom.roster.templates, initialRoom.roster.accounts);
   for (const poll of initialRoom.polls) seenPolls.add(poll.id);
   for (const participant of initialRoom.participants) {
     if (participant.id !== selfId) void mesh.connect(participant.id, false);
@@ -986,18 +1141,13 @@ function showFarewell(room: string): void {
   );
 }
 
-// A link straight to a room skips the dashboard.
+// An invite link goes straight to the device check — the screen with the
+// enter button on it — and never to the dashboard. Someone handed a link is
+// trying to get into one specific room; making them meet a room-creation
+// form first is asking them to navigate to where they already were.
 const linked = roomFromLocation();
 if (linked) {
-  const remembered = localStorage.getItem("agmeet.name") ?? "";
-  if (remembered) {
-    showLobby({ room: linked, name: remembered });
-  } else {
-    // No name yet: the dashboard asks for one, and its code field is prefilled.
-    showDashboard();
-    const code = document.getElementById("dash-code") as HTMLInputElement | null;
-    if (code) code.value = linked;
-  }
+  showLobby({ room: linked, name: localStorage.getItem("agmeet.name") ?? "" });
 } else {
   showDashboard();
 }

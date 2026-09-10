@@ -27,6 +27,102 @@ impl Role {
     }
 }
 
+/// What one person is allowed to do in a room.
+///
+/// This is separate from `Role`, which is about who owns the room. A presenter
+/// and an attendee are both guests; what distinguishes them is this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Capability {
+    pub mic: bool,
+    pub cam: bool,
+    /// Screen sharing, which is also how slides are presented.
+    pub screen: bool,
+    /// Draw on the whiteboard even while it is locked.
+    pub board: bool,
+    pub chat: bool,
+    /// Attach files to chat. Off for ordinary attendees.
+    pub upload: bool,
+    /// Run the room: admit people, mute others, open the board for everyone,
+    /// start polls, change room policy.
+    pub moderate: bool,
+}
+
+impl Capability {
+    /// Everything. What the operator of a room gets.
+    pub const fn operator() -> Self {
+        Self { mic: true, cam: true, screen: true, board: true, chat: true, upload: true, moderate: true }
+    }
+
+    /// Speaks and is seen, and can present. Runs nothing.
+    pub const fn presenter() -> Self {
+        Self { mic: true, cam: true, screen: true, board: false, chat: true, upload: false, moderate: false }
+    }
+
+    /// Watches and types. The default for anybody who just has the link.
+    pub const fn attendee() -> Self {
+        Self { mic: true, cam: true, screen: false, board: false, chat: true, upload: false, moderate: false }
+    }
+
+    /// Watches and types, nothing else. For a lecture audience.
+    pub const fn viewer() -> Self {
+        Self { mic: false, cam: false, screen: false, board: false, chat: true, upload: false, moderate: false }
+    }
+}
+
+impl Default for Capability {
+    fn default() -> Self {
+        Self::attendee()
+    }
+}
+
+/// A named set of capabilities the operator can hand out.
+///
+/// Three ship with every room and cannot be deleted; anything else is the
+/// operator's own and can be edited or removed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleTemplate {
+    pub id: String,
+    pub name: String,
+    #[serde(flatten)]
+    pub caps: Capability,
+    /// Built-ins are not deletable.
+    #[serde(default)]
+    pub builtin: bool,
+}
+
+impl RoleTemplate {
+    pub fn builtins() -> Vec<Self> {
+        vec![
+            Self { id: "operator".into(), name: "Operator".into(), caps: Capability::operator(), builtin: true },
+            Self { id: "presenter".into(), name: "Presenter".into(), caps: Capability::presenter(), builtin: true },
+            Self { id: "attendee".into(), name: "Attendee".into(), caps: Capability::attendee(), builtin: true },
+            Self { id: "viewer".into(), name: "Viewer".into(), caps: Capability::viewer(), builtin: true },
+        ]
+    }
+}
+
+/// An account the operator created for this room, as it arrives on the wire.
+/// The password is hashed the moment it lands and never stored or echoed.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSpec {
+    pub username: String,
+    pub password: String,
+    /// Id of the role template this account is granted.
+    pub role: String,
+}
+
+/// An account as the room reports it back. No password, ever.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountView {
+    pub username: String,
+    pub role: String,
+    pub role_name: String,
+}
+
 /// How a room admits people.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +134,9 @@ pub enum RoomLock {
     Passcode,
     /// A moderator admits each arrival by hand.
     Approval,
+    /// Sign in with a username and password the operator created. The account
+    /// decides what the person may do once inside.
+    Accounts,
 }
 
 /// Everything the operator decides when the room is created.
@@ -57,6 +156,14 @@ pub struct RoomSettings {
     /// Whether anyone but a moderator may record.
     pub allow_recording: bool,
     pub lock: RoomLock,
+}
+
+/// The room's own roster, sent to moderators so they can manage it in place.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterView {
+    pub templates: Vec<RoleTemplate>,
+    pub accounts: Vec<AccountView>,
 }
 
 impl Default for RoomSettings {
@@ -93,6 +200,10 @@ pub struct ParticipantView {
     pub id: ParticipantId,
     pub name: String,
     pub role: Role,
+    /// What this person may actually do.
+    pub caps: Capability,
+    /// The template they came in under, for the participants list.
+    pub role_name: String,
     #[serde(flatten)]
     pub media: MediaState,
     /// Unix millis. Used to order tiles stably and to show join order.
@@ -109,6 +220,7 @@ pub enum ChatKind {
     Text,
     PollStarted,
     PollResults,
+    File,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -123,6 +235,25 @@ pub struct ChatMessage {
     pub kind: ChatKind,
     /// The poll this line refers to, for the two poll kinds.
     pub poll: Option<Uuid>,
+    /// What was attached, for `ChatKind::File`. Only ever the description —
+    /// the bytes are fetched on demand, so joining a room with a long history
+    /// of attachments costs one small line each, not a download.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<FileMeta>,
+}
+
+/// An attachment as everybody in the room sees it listed.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMeta {
+    pub id: Uuid,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    /// The room keeps a bounded amount of attachment data. Once a file ages
+    /// out of that budget its line stays — with this set, so the chat says
+    /// what was shared rather than offering a download that cannot work.
+    pub expired: bool,
 }
 
 /// One pen stroke on the whiteboard.
@@ -194,6 +325,8 @@ pub struct RoomView {
     pub chat: Vec<ChatMessage>,
     pub board: BoardView,
     pub polls: Vec<PollView>,
+    /// Only populated for moderators; empty for everyone else.
+    pub roster: RosterView,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -230,6 +363,11 @@ pub enum ClientMessage {
         create: Option<CreateOptions>,
         #[serde(default)]
         passcode: Option<String>,
+        /// For a room locked to accounts.
+        #[serde(default)]
+        username: Option<String>,
+        #[serde(default)]
+        password: Option<String>,
         #[serde(default)]
         media: MediaState,
     },
@@ -240,6 +378,12 @@ pub enum ClientMessage {
     /// Opaque WebRTC payload forwarded verbatim to a single peer.
     Signal { to: ParticipantId, payload: serde_json::Value },
     Chat { body: String },
+    /// An attachment, base64 in the body. It travels over the socket that is
+    /// already open and already authenticated rather than over a second,
+    /// separately guarded upload endpoint.
+    File { name: String, mime: String, data: String },
+    /// Asks for an attachment's bytes. Answered to the asker alone.
+    FileGet { file: Uuid },
     Media { #[serde(flatten)] state: MediaState },
     Reaction { kind: String },
     Moderate { target: ParticipantId, action: ModAction },
@@ -276,6 +420,12 @@ pub enum ClientMessage {
     /// Publishes the outcome to the room.
     PollReveal { poll: Uuid, mode: RevealMode },
 
+    /// Roster management, moderators only.
+    TemplateSave { template: RoleTemplate },
+    TemplateDelete { id: String },
+    AccountSave { account: AccountSpec },
+    AccountDelete { username: String },
+
     /// Changes room policy mid-session. Moderators only.
     Settings {
         #[serde(default)]
@@ -311,6 +461,8 @@ pub enum ServerMessage {
     Left { id: ParticipantId },
     Signal { from: ParticipantId, payload: serde_json::Value },
     Chat { message: ChatMessage },
+    /// The bytes of one attachment, for the participant who asked.
+    FileData { file: Uuid, name: String, mime: String, data: String },
     Media {
         id: ParticipantId,
         #[serde(flatten)]
@@ -337,6 +489,12 @@ pub enum ServerMessage {
     /// Sent whenever a poll is created, voted on, or closed. Carries the whole
     /// poll so a client never has to reconcile a partial update.
     Poll { poll: PollView },
+    /// The room needs a username and password, or the pair supplied was
+    /// wrong. Deliberately does not say which half was wrong.
+    NeedSignIn { retry: bool },
+    /// The roster changed. Moderators only.
+    RosterChanged { roster: RosterView },
+
     /// The room needs a passcode, or the one supplied was wrong. `retry` is
     /// false on the first ask so the client can tell "enter it" apart from
     /// "that was not it".
@@ -379,6 +537,12 @@ pub struct CreateOptions {
     /// stored or echoed in the clear.
     #[serde(default)]
     pub passcode: Option<String>,
+    /// Custom role templates, on top of the three built-ins.
+    #[serde(default)]
+    pub templates: Vec<RoleTemplate>,
+    /// Accounts, for `RoomLock::Accounts`.
+    #[serde(default)]
+    pub accounts: Vec<AccountSpec>,
 }
 
 fn yes() -> bool {

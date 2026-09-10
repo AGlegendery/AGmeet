@@ -22,6 +22,8 @@ export interface JoinRequest {
   create?: CreateOptions;
   /** Filled in after the server asks for it. */
   passcode?: string;
+  username?: string;
+  password?: string;
   mic: boolean;
   cam: boolean;
 }
@@ -107,6 +109,8 @@ export class Signaling {
       name: this.join.name,
       ...(this.join.create ? { create: this.join.create } : {}),
       ...(this.join.passcode ? { passcode: this.join.passcode } : {}),
+      ...(this.join.username ? { username: this.join.username } : {}),
+      ...(this.join.password ? { password: this.join.password } : {}),
       media: {
         mic: this.join.mic,
         cam: this.join.cam,
@@ -120,6 +124,15 @@ export class Signaling {
   /** Supplies a passcode and retries the handshake on the same socket. */
   retryWithPasscode(passcode: string): void {
     this.join.passcode = passcode;
+    this.sendJoin();
+  }
+
+  /** Supplies credentials and retries on the same socket. */
+  retryWithSignIn(username: string, password: string): void {
+    this.join.username = username;
+    this.join.password = password;
+    // The display name follows the account, so people are named consistently.
+    if (username.trim()) this.join.name = username.trim();
     this.sendJoin();
   }
 

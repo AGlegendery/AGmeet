@@ -14,9 +14,10 @@ console.log("--- dashboard ---");
   await page.waitForSelector(".dash");
   check("dashboard offers Home and Rooms", (await page.locator(".dash__tab").count()) === 2);
   check("no meeting sidebar exists anywhere", (await page.locator(".sidebar").count()) === 0);
-  check("room creation offers three door policies", (await page.locator(".segment").count()) === 3);
+  const doors = await page.locator(".segment").count();
+  check("room creation offers every door policy", doors === 4, `${doors}: open, passcode, ask, sign in`);
   check("a room code is generated", (await page.inputValue("#dash-roomcode")).length > 0);
-  check("appearance lives in the header", await page.isVisible('.dash__head [aria-label="Appearance"]'));
+  check("appearance lives in the dashboard header", await page.isVisible('.dash__head [aria-label="Appearance"]'));
 
   // A pasted link should be accepted where a code is expected.
   await page.fill("#dash-name", "Anselm Rautavaara");
@@ -125,7 +126,7 @@ console.log("\n--- room policy: guest media ---");
   check("the guest reads as muted to the room", beforeMic);
 
   // Handing the permission back re-enables the controls.
-  await host.click('.room-header__menus [aria-label="Room settings"]');
+  await host.click('.dock [aria-label="Room settings"]');
   await host.waitForTimeout(250);
   await host.click('.popover__menu .toggle:has-text("Guest camera") .switch');
   await guest.waitForTimeout(900);
@@ -143,30 +144,32 @@ console.log("\n--- recording ---");
   await enterFromLobby(guest);
   await guest.waitForTimeout(1000);
 
-  await guest.click('.room-header__menus [aria-label="Room settings"]');
+  // Recording is an action, so it lives in the dock's More menu with the
+  // other actions; the settings menu only governs whether it is allowed.
+  await guest.click('.dock__btn[aria-label="More room actions"]');
   await guest.waitForTimeout(250);
   check(
     "a guest cannot record when the room forbids it",
-    !(await guest.isVisible('.popover__menu button:has-text("Record the room")'))
+    !(await guest.isVisible('.dock__menu button:has-text("Record the room")'))
   );
   await guest.keyboard.press("Escape");
 
-  await host.click('.room-header__menus [aria-label="Room settings"]');
+  await host.click('.dock__btn[aria-label="More room actions"]');
   await host.waitForTimeout(250);
-  check("the host can record", await host.isVisible('button:has-text("Record the room")'));
-  await host.click('button:has-text("Record the room")');
+  check("the host can record", await host.isVisible('.dock__menu button:has-text("Record the room")'));
+  await host.click('.dock__menu button:has-text("Record the room")');
   await host.waitForTimeout(2500);
   check("the room is told it is being recorded", await host.isVisible(".pill--rec"));
   await guest.waitForTimeout(600);
   check("everyone sees the recording state, not just the recorder", await guest.isVisible(".pill--rec"));
 
-  await host.click('.room-header__menus [aria-label="Room settings"]');
+  await host.click('.dock__btn[aria-label="More room actions"]');
   await host.waitForTimeout(250);
-  await host.click('button:has-text("Stop recording")');
+  await host.click('.dock__menu button:has-text("Stop recording")');
   await host.waitForTimeout(1500);
   check("stopping offers the take", await host.isVisible('button:has-text("Download")'));
   check("and offers to throw it away", await host.isVisible('button:has-text("Discard")'));
-  const blurb = await host.textContent(".polldlg .field__hint");
+  const blurb = await host.textContent(".polldlg--recording .field__hint");
   check("it says the file never left the machine", blurb.includes("stayed on this device"), blurb);
   await host.click('button:has-text("Discard")');
   await host.waitForTimeout(400);
@@ -196,8 +199,26 @@ console.log("\n--- themes ---");
     "the light theme applies",
     (await page.evaluate(() => document.documentElement.dataset.theme)) === "light"
   );
-  const ground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  check("the light ground is actually light", ground.includes("244") || ground.includes("245"), ground);
+  // Assert the property, not a particular hex: the palette is allowed to move.
+  const ground = await page.evaluate(() => {
+    const rgb = getComputedStyle(document.body)
+      .backgroundColor.match(/\d+(\.\d+)?/g)
+      .slice(0, 3)
+      .map(Number);
+    const lin = rgb.map((c) => {
+      const v = c / 255;
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return {
+      css: getComputedStyle(document.body).backgroundColor,
+      luminance: 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2],
+    };
+  });
+  check(
+    "the light ground is actually light",
+    ground.luminance > 0.8,
+    `${ground.css} · L=${ground.luminance.toFixed(3)}`
+  );
   await page.screenshot({ path: `${process.env.OUT ?? "."}/dash-light.png` });
 
   await page.reload();

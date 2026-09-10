@@ -20,7 +20,6 @@
   color: var(--accent-ink);
   background: linear-gradient(140deg, var(--accent), var(--accent-dim));
   border-radius: 9px;
-  box-shadow: var(--edge-light), 0 4px 14px -4px var(--accent-glow);
 }
 
 .brand__mark svg {
@@ -73,7 +72,6 @@
   color: var(--text-2);
   background: var(--glass-2-bg);
   border-color: var(--glass-2-border);
-  box-shadow: var(--edge-light);
 }
 
 .btn--glass:hover:not(:disabled) {
@@ -84,7 +82,6 @@
 .btn--accent {
   color: var(--accent-ink);
   background: linear-gradient(140deg, var(--accent), var(--accent-dim));
-  box-shadow: var(--edge-light), 0 8px 24px -10px var(--accent-glow);
 }
 
 .btn--accent:hover:not(:disabled) {
@@ -170,7 +167,6 @@
     hsl(var(--hue, 250) 62% 58%),
     hsl(calc(var(--hue, 250) + 28) 58% 44%)
   );
-  box-shadow: var(--edge-light);
   user-select: none;
 }
 
@@ -285,7 +281,10 @@
   gap: var(--s-3);
   height: 100%;
   padding: var(--s-3);
-  padding-bottom: 96px; /* clearance for the floating dock */
+  /* Clearance for the floating dock. The dock wraps to a second row on narrow
+     screens, so this follows its measured height (published as --dock-h)
+     rather than a number that is only right at one width. */
+  padding-bottom: calc(var(--dock-h, 64px) + var(--dock-bottom) + var(--s-3));
 }
 
 /* The layout pass measures the stage and publishes the exact tile size, so
@@ -344,9 +343,13 @@
   background: var(--tile-bg);
   border: 1px solid var(--glass-1-border);
   border-radius: var(--r-lg);
-  box-shadow: var(--edge-light), var(--shadow-2);
   transition: border-color var(--m-slow) var(--ease-state),
     box-shadow var(--m-slow) var(--ease-state);
+}
+
+/* Only a genuinely new tile animates in. Putting this on `.tile` itself made
+   the animation re-run every time the grid was rebuilt. */
+.tile--entering {
   animation: tile-in var(--m-slow) var(--ease-out) both;
 }
 
@@ -382,7 +385,6 @@
 /* Active speaker: a soft luminous edge that fades in. No flashing. */
 .tile--speaking {
   border-color: var(--accent-edge-strong);
-  box-shadow: var(--edge-light), var(--shadow-2), 0 0 32px -8px var(--accent-glow);
 }
 
 .tile--host {
@@ -413,10 +415,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   background: var(--scrim);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border-radius: var(--r-pill);
-  box-shadow: var(--edge-light);
 }
 
 .tile__muted {
@@ -469,22 +468,31 @@
 
 .dock {
   position: absolute;
-  bottom: var(--s-5);
-  left: 50%;
+  bottom: var(--dock-bottom);
+  /* Spanning the stage and centring with auto margins, rather than
+     `left: 50%` and a -50% shift: that older trick leaves the bar only half
+     the stage to lay out in, so a wide row of controls hangs off both edges
+     and the outermost ones become unreachable. Here it can use the whole
+     width, and wrap when even that is not enough. */
+  left: var(--s-2);
+  right: var(--s-2);
+  width: fit-content;
+  margin-inline: auto;
   z-index: 20;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: var(--s-2);
   padding: var(--s-2);
   border-radius: var(--r-pill);
-  transform: translateX(-50%);
   animation: dock-in var(--m-slow) var(--ease-out) both;
 }
 
 @keyframes dock-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 10px);
+    transform: translateY(10px);
   }
 }
 
@@ -547,7 +555,6 @@
   /* Darkened so the white label clears 4.5:1 against the lighter stop. */
   background: linear-gradient(140deg, #d63354, #b81f42);
   border-color: transparent;
-  box-shadow: var(--edge-light), 0 8px 24px -10px rgba(232, 54, 92, 0.9);
 }
 
 .dock__leave:hover:not(:disabled) {
@@ -564,7 +571,6 @@
 
 @media (max-width: 720px) {
   .dock {
-    bottom: var(--s-3);
     gap: 6px;
     padding: 6px;
   }
@@ -584,7 +590,42 @@
 
   .stage__grid {
     padding: var(--s-2);
-    padding-bottom: 84px;
+    padding-bottom: calc(var(--dock-h, 56px) + var(--dock-bottom) + var(--s-2));
+  }
+}
+
+/* Narrow: one row cannot hold every control. Left to wrap on its own the bar
+   breaks wherever it runs out of room and leaves two or three controls
+   stranded and centred underneath, which reads as a mistake. The divider that
+   already separates your own media from the room's controls becomes the
+   break instead, so the split is the one the grouping already implies. */
+@media (max-width: 559px) {
+  .dock {
+    /* A pill radius on a bar that has wrapped reads as a lozenge. Once it is
+       two rows tall it is a rounded block. */
+    border-radius: var(--r-lg);
+  }
+
+  .dock__divider {
+    flex-basis: 100%;
+    width: 100%;
+    height: 0;
+    margin: 0;
+    background: none;
+  }
+}
+
+/* Phone: every control is square and the gaps close up. */
+@media (max-width: 460px) {
+  .dock {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .dock__leave {
+    width: 44px;
+    padding: 0;
+    margin-left: 0;
   }
 }
 
@@ -605,11 +646,8 @@
   color: var(--text-1);
   white-space: nowrap;
   background: var(--glass-3-bg);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--glass-3-border);
   border-radius: var(--r-xs);
-  box-shadow: var(--shadow-2);
   opacity: 0;
   transform: translate(-50%, 4px);
   pointer-events: none;
@@ -672,7 +710,8 @@
 
 :root[data-glass="full"] .dock[data-config],
 :root[data-glass="full"] .board__toolbar[data-config],
-:root[data-glass="full"] .lobby__preview-controls[data-config] {
+:root[data-glass="full"] .lobby__preview-controls[data-config],
+:root[data-glass="full"] .composer[data-config] {
   background: none;
   border-color: transparent;
   box-shadow: none;
@@ -684,7 +723,8 @@
    a stacking context of its own for the controls to sit above it. */
 :root[data-glass="full"] .dock[data-config],
 :root[data-glass="full"] .board__toolbar[data-config],
-:root[data-glass="full"] .lobby__preview-controls[data-config] {
+:root[data-glass="full"] .lobby__preview-controls[data-config],
+:root[data-glass="full"] .composer[data-config] {
   isolation: isolate;
 }
 

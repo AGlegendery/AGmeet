@@ -19,6 +19,11 @@ const ARGS = [
 export function launch(extra = {}) {
   return chromium.launch({
     args: ARGS,
+    // A real machine has a UTF-8 locale; a bare container often does not, and
+    // Chromium then throws away any non-ASCII download filename ("تمرین.pdf"
+    // saves as "download"). Without this the attachment test measures the
+    // container rather than the product.
+    env: { ...process.env, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" },
     ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
     ...extra,
   });

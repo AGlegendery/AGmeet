@@ -25,16 +25,31 @@ export interface DockHandlers {
   onToggleBoard: () => void;
   onToggleHand: () => void;
   onReaction: (kind: string) => void;
+  onNewPoll: () => void;
+  onToggleRecording: () => void;
+  onInvite: () => void;
   onLeave: () => void;
+}
+
+/** What the current participant is actually allowed to reach. */
+export interface DockCapabilities {
+  moderate: boolean;
+  whiteboard: boolean;
+  record: boolean;
+  recording: boolean;
 }
 
 export interface DockHandles {
   root: HTMLElement;
+  /** Where the room's settings and appearance menus mount. They belong under
+   *  the stage with the other controls, not up in the header. */
+  settingsSlot: HTMLElement;
   setState: (state: DockState) => void;
   setScreenAvailable: (available: boolean) => void;
   setBoardAvailable: (available: boolean) => void;
-  /** Room policy can forbid a guest a microphone or camera entirely. */
-  setMediaAllowed: (allowed: boolean) => void;
+  /** A role or the room's policy can withhold each of these separately. */
+  setMediaAllowed: (mic: boolean, cam: boolean) => void;
+  setCapabilities: (capabilities: DockCapabilities) => void;
 }
 
 function control(
@@ -129,11 +144,101 @@ export function buildDock(handlers: DockHandlers): DockHandles {
     [el("span", { html: icons.leave }), el("span", { text: "Leave" })]
   ) as HTMLButtonElement;
 
+  // --- More ---------------------------------------------------------------
+  // Everything a room can do that is not a per-second control lives here,
+  // with words rather than icons. "Where do I start a poll" and "where is the
+  // whiteboard" were fair questions when the only answer was an unlabelled
+  // glyph that happened to be disabled.
+  const moreMenu = el("div", {
+    class: "menu glass-3 dock__menu",
+    role: "menu",
+    hidden: true,
+  });
+
+  const more = el("button", {
+    class: "dock__btn tip",
+    type: "button",
+    "data-tip": "More",
+    "aria-label": "More room actions",
+    "aria-haspopup": "menu",
+    "aria-expanded": "false",
+    html: icons.more,
+  }) as HTMLButtonElement;
+
+  let capabilities: DockCapabilities = {
+    moderate: false,
+    whiteboard: false,
+    record: false,
+    recording: false,
+  };
+
+  function menuItem(
+    label: string,
+    icon: string,
+    onClick: () => void,
+    options: { danger?: boolean; hint?: string } = {}
+  ): HTMLElement {
+    const button = el(
+      "button",
+      {
+        class: `menu__item${options.danger ? " menu__item--danger" : ""}`,
+        type: "button",
+        role: "menuitem",
+      },
+      [
+        el("span", { html: icon }),
+        el("span", { style: "flex:1" }, [
+          el("span", { style: "display:block", text: label }),
+          ...(options.hint
+            ? [el("span", { class: "field__hint", style: "display:block", text: options.hint })]
+            : []),
+        ]),
+      ]
+    );
+    button.addEventListener("click", () => {
+      onClick();
+      closeAll();
+    });
+    return button;
+  }
+
+  function paintMore(): void {
+    const items: Node[] = [];
+
+    if (capabilities.moderate && capabilities.whiteboard) {
+      items.push(
+        menuItem(boardOpen ? "Close the whiteboard" : "Open the whiteboard", icons.board, () =>
+          handlers.onToggleBoard()
+        )
+      );
+    }
+    if (capabilities.moderate) {
+      items.push(menuItem("Start a poll", icons.poll, () => handlers.onNewPoll()));
+    }
+    if (capabilities.record) {
+      items.push(
+        menuItem(
+          capabilities.recording ? "Stop recording" : "Record the room",
+          capabilities.recording ? icons.stop : icons.record,
+          () => handlers.onToggleRecording(),
+          { hint: capabilities.recording ? undefined : "Saved on this device only" }
+        )
+      );
+    }
+    items.push(menuItem("Copy invite link", icons.link, () => handlers.onInvite()));
+
+    moreMenu.replaceChildren(...items);
+  }
+
+  let boardOpen = false;
+
   function closeAll(): void {
     reactionMenu.hidden = true;
     leaveMenu.hidden = true;
+    moreMenu.hidden = true;
     reactions.setAttribute("aria-expanded", "false");
     leave.setAttribute("aria-expanded", "false");
+    more.setAttribute("aria-expanded", "false");
   }
 
   function toggle(trigger: HTMLElement, menu: HTMLElement): void {
@@ -147,7 +252,13 @@ export function buildDock(handlers: DockHandlers): DockHandles {
   }
 
   reactions.addEventListener("click", () => toggle(reactions, reactionMenu));
+  more.addEventListener("click", () => {
+    paintMore();
+    toggle(more, moreMenu);
+  });
   leave.addEventListener("click", () => toggle(leave, leaveMenu));
+
+  const settingsSlot = el("span", { class: "dock__slot" });
 
   const root = el("div", { class: "dock glass-4", role: "toolbar", "aria-label": "Meeting controls" }, [
     mic,
@@ -157,8 +268,18 @@ export function buildDock(handlers: DockHandlers): DockHandles {
     el("span", { class: "dock__divider", "aria-hidden": "true" }),
     hand,
     el("span", { style: "position:relative;display:inline-flex" }, [reactions, reactionMenu]),
+    el("span", { style: "position:relative;display:inline-flex" }, [more, moreMenu]),
+    settingsSlot,
     el("span", { style: "position:relative;display:inline-flex" }, [leave, leaveMenu]),
   ]);
+
+  // The dock wraps to a second row when the screen is too narrow for one, so
+  // the clearance the stage keeps under its tiles cannot be a fixed number.
+  // The dock is the only thing that knows its own height, so it publishes it.
+  new ResizeObserver(() => {
+    const height = Math.round(root.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty("--dock-h", `${height}px`);
+  }).observe(root);
 
   document.addEventListener("click", (event) => {
     if (!root.contains(event.target as Node)) closeAll();
@@ -169,6 +290,7 @@ export function buildDock(handlers: DockHandlers): DockHandles {
 
   return {
     root,
+    settingsSlot,
     setState(state) {
       // Off states read in the signal colour: whether your microphone is live
       // is worth seeing without reading a label.
@@ -187,6 +309,7 @@ export function buildDock(handlers: DockHandlers): DockHandles {
       screen.setAttribute("data-tip", state.screen ? "Stop sharing" : "Share screen");
       screen.setAttribute("aria-label", state.screen ? "Stop sharing screen" : "Share screen");
 
+      boardOpen = state.board;
       board.setAttribute("aria-pressed", String(state.board));
       board.setAttribute("data-tip", state.board ? "Close the whiteboard" : "Whiteboard");
       board.setAttribute("aria-label", state.board ? "Close the whiteboard" : "Open the whiteboard");
@@ -201,17 +324,19 @@ export function buildDock(handlers: DockHandlers): DockHandles {
         screen.setAttribute("data-tip", "Screen sharing needs a desktop browser");
       }
     },
-    setMediaAllowed(allowed) {
+    setCapabilities(next) {
+      capabilities = next;
+      paintMore();
+    },
+    setMediaAllowed(micAllowed, camAllowed) {
       // Disabled rather than hidden: a control that vanishes leaves people
       // hunting for it, while a disabled one with a tooltip explains itself.
-      mic.disabled = !allowed;
-      cam.disabled = !allowed;
-      if (!allowed) {
-        const reason = "The host has turned this off for guests";
-        mic.setAttribute("data-tip", reason);
-        cam.setAttribute("data-tip", reason);
-      }
-      // setState repaints the real labels; this only clears a stale excuse.
+      mic.disabled = !micAllowed;
+      cam.disabled = !camAllowed;
+      const reason = "Not available with your role in this room";
+      if (!micAllowed) mic.setAttribute("data-tip", reason);
+      if (!camAllowed) cam.setAttribute("data-tip", reason);
+      // setState repaints the real labels; this only sets a stale excuse.
     },
     setBoardAvailable(available) {
       // Opening the board for everyone is a moderator action; the control is

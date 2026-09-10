@@ -76,3 +76,29 @@ export function generateRoomId(): string {
 
 export const prefersReducedMotion = (): boolean =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * Hands a blob to the browser's downloader.
+ *
+ * Shared by recordings and chat attachments: both are bytes this machine
+ * already holds, saved without a round trip to anything.
+ */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Revoking immediately can cancel the download in some browsers.
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+/** Turns base64 into the bytes it stands for. */
+export function decodeBase64(data: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(data);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
