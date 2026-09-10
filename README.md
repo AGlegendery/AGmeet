@@ -10,9 +10,13 @@ lets it run on a small VPS and start in milliseconds.
 - **Peer-to-peer media** — the server never sees or forwards a video frame.
 - **Nothing to install** — participants open a link.
 - **Classroom tools** — a shared whiteboard, polls that pop up and report back
-  to the chat, and local recording you download or discard.
-- **Room policy** — open, passcode, or admit each arrival by hand; guests'
-  cameras and recording are the operator's call, enforced by the server.
+  to the chat, local recording you download or discard, and files handed
+  round in the chat.
+- **Room policy** — open, passcode, admit each arrival by hand, or sign in
+  with an account; guests' cameras, attachments and recording are the
+  operator's call, enforced by the server.
+- **Roles** — operator, presenter, attendee, viewer, plus any role a room
+  cares to define: a camera without a microphone, slides only, chat only.
 - **Light and dark** — graphite neutrals, violet for action, both themes
   contrast-checked.
 - **Liquid glass, if the machine can afford it** — a real WebGL refraction
@@ -111,17 +115,17 @@ that would slot in.
 
 ## How a room works
 
-There is no account and no sidebar. Everything you decide happens before you
-are in a room:
+There is no sidebar, and no account unless a room asks for one. Everything you
+decide happens before you are in a room:
 
 1. **Dashboard** — open a room (name, code, door policy, whiteboard, guest
-   media, recording), or join one by code or by pasting a link.
+   media, recording, accounts), or join one by code or by pasting a link.
 2. **Lobby** — check the camera and microphone, and meet the door. A passcode
-   room asks for one here; an approval room says **Ask to join the room**
-   rather than *Join*, and waits.
-3. **Room** — the stage takes the whole window. The only things left to
-   configure are the room itself and the appearance, and both are in the
-   header.
+   room asks for one here, an accounts room asks who you are, and an approval
+   room says **Ask to join the room** rather than *Join*, and waits.
+3. **Room** — the stage takes the whole window. The header says what the room
+   is; the bar under the video is where you operate it, settings and
+   appearance included.
 
 A room exists while someone is in it. Its code is its link, so
 `https://your-server/r/std-sr2-rrp` is all anybody needs.
@@ -133,6 +137,25 @@ A room exists while someone is in it. Its code is its link, so
 | Open | Anyone with the link walks in. |
 | Passcode | Everyone is asked for a shared code, hashed with SHA-256 on arrival and never stored in the clear. |
 | Ask to join | A moderator admits or refuses each arrival. The joiner is told they are waiting, not left on a spinner. |
+| Sign in | Each person signs in with an account, and the role behind it decides what they may do. A wrong username and a wrong password give the same answer. |
+
+#### Roles
+
+A role is a set of capabilities — microphone, camera, screen, whiteboard,
+chat, attachments, moderation — and is separate from who owns the room. Four
+roles ship built in and cannot be deleted:
+
+| Role | May |
+| --- | --- |
+| Operator | Everything the room allows, including moderating it. |
+| Presenter | Microphone, camera, screen, chat. |
+| Attendee | Microphone, camera, chat. |
+| Viewer | Chat. |
+
+A room can add its own — a camera with no microphone, say — and hand it to an
+account. Every capability is checked where the state changes, not by hiding a
+control: a viewer whose own socket declares a live microphone is still read as
+muted by the room.
 
 The first person through the door hosts, whatever the policy says — otherwise
 an approval-gated room could never be opened.
@@ -146,6 +169,20 @@ stored on the server** — the room is only told that it is being recorded, so
 everybody can see the indicator. Whether anyone but a moderator may record is
 a room setting.
 
+### Attachments
+
+A file travels over the socket that is already open and already
+authenticated, and only from someone whose role allows attachments. The chat
+line carries the name and size; the bytes are fetched only when somebody asks
+for them, so joining a room with a long history of attachments costs one small
+line each rather than a download.
+
+Both the single file (8 MiB encoded, about a 6 MB document) and the room's
+whole retained set (48 MiB) are bounded. Past that the oldest attachment's
+bytes are dropped and its chat line says so, rather than offering a download
+that cannot work. Nothing is written to disk: the room is memory, and it ends
+when the room does.
+
 ### Polls
 
 A poll pops up over the stage and can always be dismissed. Answering closes
@@ -153,6 +190,10 @@ it, and a notice stays in the chat so anyone can go back in and change their
 answer until the operator ends the poll. Ending it locks the answers;
 revealing publishes the tally, the correct option, or both, into the chat
 where the room is already looking. Votes are counted, never attributed.
+
+Whoever runs the poll sees it land while it is open. Everybody else sees only
+their own answer until the results are published — a visible tally tells the
+undecided which way to go.
 
 ## Visual tiers
 
@@ -223,15 +264,16 @@ Two environment variables, both optional: `AGMEET_URL` to point at a server
 somewhere other than `http://127.0.0.1:8080`, and `CHROMIUM_PATH` to use a
 Chromium that is already on the machine instead of downloading one.
 
-`room.test.mjs` covers the dashboard, the three door policies, guest-media
-policy, recording, and both themes. `glass.test.mjs` asserts that a weak client resolves to a lower tier and
-never requests the shader bundle, and that a forced `full` client renders the
-shader canvas. `meeting.test.mjs` covers joining, peer-to-peer video, chat, media state,
-moderation, the adaptive grid and the mobile layout. `classroom.test.mjs`
-covers the whiteboard and polls, reading the canvas pixels on the receiving
-side to prove ink actually crossed the wire. `accessibility.test.mjs`
-composites every glass layer to check text contrast against WCAG AA, and
-verifies that every control is keyboard reachable and named.
+Six suites:
+
+| Suite | Covers |
+| --- | --- |
+| `meeting` | Joining, peer-to-peer video, chat, attachments end to end, screen sharing, media state, the adaptive grid, and that a media change leaves the stage alone rather than restarting every video. |
+| `classroom` | The whiteboard and polls — reading canvas pixels on the *receiving* side to prove ink crossed the wire, and running a poll from the dock through to results in the chat. |
+| `room` | The dashboard, all four door policies, guest-media policy, recording, and both themes. |
+| `accounts` | Signing in, what each role may do, custom roles, and a socket that signs in as a viewer and then claims everything the role forbids. |
+| `glass` | That a weak client resolves to a lower tier and never requests the shader bundle, and that a forced `full` client renders the shader canvas. |
+| `accessibility` | Text contrast against WCAG AA with every glass layer composited, in both themes, and that every control is keyboard reachable and named. |
 
 ## Project layout
 
@@ -247,7 +289,8 @@ web/             TypeScript client, no framework
   src/glass.ts     capability tiers, lazy loading, the frame-rate watchdog
   src/recorder.ts  local canvas + audio recording
   src/theme.ts     light and dark
-  src/ui/          dashboard, lobby, shell, stage, dock, panel, board, polls
+  src/ui/          dashboard, lobby, shell, stage, dock, panel, board, polls,
+                   roster (roles and accounts)
 tests/           browser tests
 docs/            architecture and design notes
 ```

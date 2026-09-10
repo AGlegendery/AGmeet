@@ -166,6 +166,25 @@ The passcode is hashed with SHA-256 on arrival and compared in constant time.
 The room holds only the digest, so a memory dump or a stray log line cannot
 hand out the credential, and it dies with the room like everything else.
 
+### Capability is not Role
+
+`Role` is who owns the room — host, moderator, guest — and decides who may
+moderate whom. `Capability` is what a participant may *do*: microphone,
+camera, screen, whiteboard, chat, attachments, moderation. They are checked
+independently, because they answer different questions. A host always
+moderates, whatever template they signed in under; a guest signed in as an
+operator moderates too.
+
+Declared media is filtered through both the room's policy and the person's own
+capabilities, in that order, every time it changes. So a presenter whose role
+carries no microphone cannot acquire one by editing a message, and neither can
+a viewer by opening a second socket and signing in again.
+
+An attachment is refused the same way: `caps.upload` is checked in the handler
+that stores it, and the refusal is a message back to the sender rather than a
+silent drop, so a client that shows the control by mistake still explains
+itself.
+
 A caution worth writing down: `#[serde(rename_all = "camelCase")]` on an enum
 renames the **variants**, not the fields inside them. `Settings { guest_media }`
 therefore never matched the `guestMedia` the client sent, and the setting
@@ -260,12 +279,15 @@ never learns a tier exists.
 
 ## Deliberate non-goals
 
-- **No accounts.** Room codes are the access control. Anyone with the code and
-  the address can join. Put it behind your own authentication if that is not
-  enough.
-- **No persistence.** Nothing is written to disk. Chat, the whiteboard and
-  polls live in memory, each bounded, and all go when the room empties. An
-  export button on the board would be a reasonable first thing to add.
+- **No user accounts.** There is no sign-up, no profile and no identity that
+  outlives a room. A room may hold its own roster — usernames, password
+  digests and a role each — but that roster is part of the room and dies with
+  it. For a class that meets weekly, the operator recreates it, or puts the
+  deployment behind their own authentication.
+- **No persistence.** Nothing is written to disk. Chat, attachments, the
+  whiteboard and polls live in memory, each bounded, and all go when the room
+  empties. An export button on the board would be a reasonable first thing to
+  add.
 - **No server-side recording.** Recording is local: the stage is composited
   onto a canvas, the audio mixed in the browser, and the WebM handed to the
   person who started it. Recording *through the server* would need a media
