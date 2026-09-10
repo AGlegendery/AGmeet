@@ -298,6 +298,34 @@ export function buildLobby(
     ]),
   ]);
 
+  /**
+   * Your name.
+   *
+   * The dashboard asks for one, but an invite link goes straight here, so on
+   * a machine that has never opened AGmeet there was nowhere to give one —
+   * and the server, which requires a name, answered a bare "Not admitted"
+   * that no amount of clicking could resolve. It is prefilled from last time
+   * and stays editable: this is the screen for checking yourself over before
+   * you walk in.
+   */
+  const nameInput = el("input", {
+    class: "input",
+    type: "text",
+    id: "lobby-name",
+    maxlength: "64",
+    autocomplete: "name",
+    placeholder: "Your name",
+    "aria-label": "Your name",
+    value: request.name ?? "",
+  }) as HTMLInputElement;
+
+  const nameError = el("p", { class: "field__error", hidden: true });
+  const nameField = el("div", { class: "field" }, [
+    el("label", { class: "field__label", for: "lobby-name", text: "Your name" }),
+    nameInput,
+    nameError,
+  ]);
+
   const title = el("h1", { class: "lobby__title", text: "Join the room" });
   const subtitle = el("p", { class: "lobby__sub", text: "Check your camera and microphone before you go in." });
   const doorState = el("div", { class: "lobby__door", hidden: true });
@@ -326,6 +354,8 @@ export function buildLobby(
   function paintDoor(): void {
     passcodeField.hidden = !(state.kind === "passcode" || (info?.lock === "passcode" && !request.create));
     signInField.hidden = !(state.kind === "signIn" || (info?.lock === "accounts" && !request.create));
+    // Signing in as `mamad` already says who you are.
+    nameField.hidden = !signInField.hidden;
     action.disabled = state.kind === "connecting" || state.kind === "knocking";
 
     switch (state.kind) {
@@ -423,6 +453,7 @@ export function buildLobby(
 
   const form = el("form", { class: "lobby__form" }, [
     el("div", {}, [title, subtitle]),
+    nameField,
     el("div", { class: "field" }, [
       el("label", { class: "field__label", for: "lobby-camera", text: "Camera" }),
       cameraSelect,
@@ -475,11 +506,22 @@ export function buildLobby(
       return;
     }
 
+    const typed = nameInput.value.trim();
+    if (!signingIn && !typed) {
+      nameError.hidden = false;
+      nameError.textContent = "The room needs a name to put on your tile.";
+      nameInput.focus();
+      return;
+    }
+    nameError.hidden = true;
+    // Remembered so the next invite link opens ready to go.
+    if (typed) localStorage.setItem("agmeet.name", typed);
+
     handlers.onJoin({
       room: request.room,
       // An account names the person: signing in as `mamad` should not also
       // require typing a display name somewhere else.
-      name: signingIn ? username : request.name,
+      name: signingIn ? username : typed,
       create: request.create,
       ...(signingIn ? { username, password: passwordInput.value } : {}),
       mic: wantMic && (stream?.getAudioTracks().length ?? 0) > 0,

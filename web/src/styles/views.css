@@ -1224,9 +1224,13 @@
   color: var(--text-1);
 }
 
+/* Choosing a door policy is a choice, not an action. It reads as a raised
+   graphite chip with the accent kept to the label, so the accent stays on the
+   one thing on the card that actually does something. */
 .segment[aria-checked="true"] {
-  color: var(--accent-ink);
-  background: var(--accent);
+  color: var(--accent-text);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--accent-edge);
 }
 
 /* --- Recent rooms --------------------------------------------------------- */

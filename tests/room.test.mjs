@@ -33,6 +33,59 @@ console.log("--- dashboard ---");
   await page.context().close();
 }
 
+console.log("\n--- arriving by invite link ---");
+{
+  // A link handed to somebody whose browser has never opened AGmeet. There is
+  // no remembered name, so the pre-entry screen has to ask for one — without
+  // it the join is refused by the server and there is nothing to click.
+  const host = await createRoom(browser, "Nour Haddad", "invited-room");
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const invited = await context.newPage();
+  await invited.goto(`${BASE}/r/invited-room`);
+  await invited.waitForSelector(".lobby__card");
+  await invited.waitForTimeout(900);
+
+  check("a link lands on the pre-entry screen, not the dashboard", (await invited.locator(".dash").count()) === 0);
+  check("the camera preview is live before entering", await invited.evaluate(() => {
+    const v = document.querySelector(".lobby video");
+    return Boolean(v && v.videoWidth > 0 && !v.paused);
+  }));
+  check("it says who is already inside", (await invited.textContent(".lobby__sub")).includes("already in the room"));
+  check("it asks who you are", await invited.isVisible("#lobby-name"));
+
+  await invited.click('.lobby__form button[type="submit"]');
+  await invited.waitForTimeout(500);
+  check("submitting without a name explains itself", await invited.isVisible("#lobby-name ~ .field__error"));
+  check("and does not get in", (await invited.locator(".app").count()) === 0);
+
+  await invited.fill("#lobby-name", "Sahar Delavari");
+  await invited.click('.lobby__form button[type="submit"]');
+  await invited.waitForSelector(".app", { timeout: 10000 });
+  await host.waitForTimeout(1000);
+  check(
+    "the room knows them by that name",
+    (await host.evaluate(() =>
+      [...document.querySelectorAll(".tile__name")].map((n) => n.textContent).join(" | ")
+    )).includes("Sahar Delavari")
+  );
+
+  const returning = await (await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    storageState: await context.storageState(),
+  })).newPage();
+  await returning.goto(`${BASE}/r/invited-room`);
+  await returning.waitForSelector(".lobby__card");
+  await returning.waitForTimeout(600);
+  check(
+    "the next link opens ready to go",
+    (await returning.inputValue("#lobby-name")) === "Sahar Delavari"
+  );
+
+  await returning.context().close();
+  await invited.context().close();
+  await host.context().close();
+}
+
 console.log("\n--- door: passcode ---");
 {
   const room = "locked-room";
@@ -51,7 +104,7 @@ console.log("\n--- door: passcode ---");
   await guest.fill("#lobby-passcode", "wrong");
   await guest.click('.lobby__form button[type="submit"]');
   await guest.waitForTimeout(900);
-  check("a wrong passcode is reported", await guest.isVisible(".field__error"));
+  check("a wrong passcode is reported", await guest.isVisible("#lobby-passcode ~ .field__error"));
   check("still not admitted", (await guest.locator(".app").count()) === 0);
 
   await guest.fill("#lobby-passcode", "orbit-9");
