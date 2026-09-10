@@ -234,6 +234,7 @@ export class Stage {
 
     if (this.presentation) {
       this.emptyState.remove();
+      this.grid.classList.remove("stage__grid--alone");
       this.grid.style.removeProperty("max-width");
       this.grid.style.removeProperty("margin");
       this.root.classList.add("stage--spotlight");
@@ -249,29 +250,28 @@ export class Stage {
 
     if (this.participants.length <= 1 && !spotlight) {
       // Alone in the room: the self tile plus a state that says what to do.
+      // The tile and the invite prompt are one centred column inside the
+      // grid. Appending the prompt after a full-height grid, in a stage that
+      // clips, put it below the visible area.
       const selfTile = this.selfId ? this.tiles.get(this.selfId) : null;
       this.root.classList.remove("stage--spotlight");
-      this.grid.replaceChildren();
-      if (selfTile) {
-        this.grid.append(selfTile.root);
-        this.grid.style.setProperty("--cols", "1");
-        this.grid.style.removeProperty("--tile-w");
-        this.grid.style.removeProperty("--tile-h");
-        this.grid.style.maxWidth = "min(100%, calc(62vh * 16 / 9))";
-        this.grid.style.margin = "0 auto";
-      }
-      this.root.append(this.emptyState);
-      this.emptyState.hidden = Boolean(selfTile) && this.participants.length === 1;
-      if (selfTile && this.participants.length === 1) {
-        // Keep the invite affordance visible below the single tile.
-        this.emptyState.hidden = false;
-        this.emptyState.style.height = "auto";
-        this.emptyState.style.padding = "0 var(--s-8) var(--s-8)";
-      }
+      this.emptyState.removeAttribute("style");
+      this.emptyState.hidden = false;
+      this.grid.style.setProperty("--cols", "1");
+      this.grid.style.removeProperty("--tile-w");
+      this.grid.style.removeProperty("--tile-h");
+      this.grid.style.removeProperty("max-width");
+      this.grid.style.removeProperty("margin");
+      this.grid.classList.add("stage__grid--alone");
+      this.grid.replaceChildren(
+        ...(selfTile ? [selfTile.root] : []),
+        this.emptyState
+      );
       return;
     }
 
     this.emptyState.remove();
+    this.grid.classList.remove("stage__grid--alone");
     this.grid.style.removeProperty("max-width");
     this.grid.style.removeProperty("margin");
     this.root.classList.toggle("stage--spotlight", Boolean(spotlight));

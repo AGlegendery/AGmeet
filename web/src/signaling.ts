@@ -6,7 +6,7 @@
  * dead page.
  */
 
-import type { ClientMessage, ConnectionState, ServerMessage } from "./types";
+import type { ClientMessage, ConnectionState, CreateOptions, ServerMessage } from "./types";
 
 type Handler = (message: ServerMessage) => void;
 type StateHandler = (state: ConnectionState) => void;
@@ -17,9 +17,11 @@ const KEEPALIVE_MS = 25_000;
 
 export interface JoinRequest {
   room: string;
-  roomName?: string;
   name: string;
-  classroom: boolean;
+  /** Present only when opening a new room. */
+  create?: CreateOptions;
+  /** Filled in after the server asks for it. */
+  passcode?: string;
   mic: boolean;
   cam: boolean;
 }
@@ -56,17 +58,7 @@ export class Signaling {
     socket.addEventListener("open", () => {
       this.attempt = 0;
       this.setState("connected");
-      this.send({
-        t: "join",
-        room: this.join.room,
-        roomName: this.join.roomName,
-        name: this.join.name,
-        classroom: this.join.classroom,
-        mic: this.join.mic,
-        cam: this.join.cam,
-        screen: false,
-        hand: false,
-      });
+      this.sendJoin();
       // Some proxies close a socket that has been quiet for a minute.
       this.keepalive = window.setInterval(() => this.send({ t: "ping" }), KEEPALIVE_MS);
     });
@@ -105,6 +97,30 @@ export class Signaling {
     window.setTimeout(() => {
       if (!this.closedByUs) this.connect();
     }, delay);
+  }
+
+  /** The opening handshake, also re-sent after a passcode challenge. */
+  sendJoin(): void {
+    this.send({
+      t: "join",
+      room: this.join.room,
+      name: this.join.name,
+      ...(this.join.create ? { create: this.join.create } : {}),
+      ...(this.join.passcode ? { passcode: this.join.passcode } : {}),
+      media: {
+        mic: this.join.mic,
+        cam: this.join.cam,
+        screen: false,
+        hand: false,
+        recording: false,
+      },
+    });
+  }
+
+  /** Supplies a passcode and retries the handshake on the same socket. */
+  retryWithPasscode(passcode: string): void {
+    this.join.passcode = passcode;
+    this.sendJoin();
   }
 
   send(message: ClientMessage): void {

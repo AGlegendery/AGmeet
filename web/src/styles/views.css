@@ -16,12 +16,12 @@
 
 .tab:hover {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--hover-wash);
 }
 
 .tab[aria-selected="true"] {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.075);
+  background: var(--hover-wash);
   box-shadow: var(--edge-light);
 }
 
@@ -129,8 +129,8 @@
 }
 
 .composer:focus-within {
-  border-color: rgba(123, 108, 255, 0.4);
-  box-shadow: var(--edge-light), 0 0 24px -10px rgba(123, 108, 255, 0.7);
+  border-color: var(--accent-edge);
+  box-shadow: var(--edge-light), 0 0 24px -10px var(--accent-glow);
 }
 
 .composer textarea {
@@ -172,7 +172,7 @@
 
 .person:hover,
 .person:focus-within {
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--hover-wash);
 }
 
 .person__id {
@@ -278,7 +278,7 @@
 
 .menu__item:hover {
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--hover-wash);
 }
 
 .menu__item--danger:hover {
@@ -313,8 +313,8 @@
   width: 64px;
   height: 64px;
   color: var(--accent-bright);
-  background: radial-gradient(circle at 50% 35%, rgba(123, 108, 255, 0.22), transparent 70%);
-  border: 1px solid rgba(123, 108, 255, 0.22);
+  background: radial-gradient(circle at 50% 35%, var(--accent-wash-hover), transparent 70%);
+  border: 1px solid var(--accent-wash-hover);
   border-radius: var(--r-lg);
   box-shadow: var(--edge-light);
 }
@@ -337,8 +337,8 @@
 
 .state--error .state__mark {
   color: var(--signal);
-  background: radial-gradient(circle at 50% 35%, rgba(255, 92, 122, 0.2), transparent 70%);
-  border-color: rgba(255, 92, 122, 0.26);
+  background: radial-gradient(circle at 50% 35%, var(--signal-wash), transparent 70%);
+  border-color: var(--signal-wash);
 }
 
 /* --- Skeletons -----------------------------------------------------------
@@ -347,7 +347,7 @@
 .skeleton {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--hover-wash);
   border-radius: var(--r-lg);
 }
 
@@ -358,7 +358,7 @@
   background: linear-gradient(
     100deg,
     transparent 20%,
-    rgba(255, 255, 255, 0.055) 50%,
+    var(--hover-wash) 50%,
     transparent 80%
   );
   transform: translateX(-100%);
@@ -388,7 +388,7 @@
 }
 
 .link-state[data-state="poor"] {
-  color: #ffca7a;
+  color: var(--caution);
 }
 
 .link-state[data-state="reconnecting"],
@@ -552,7 +552,7 @@
   place-items: center;
   aspect-ratio: 16 / 10;
   overflow: hidden;
-  background: linear-gradient(155deg, rgba(19, 21, 38, 0.9), rgba(10, 12, 24, 0.95));
+  background: var(--tile-bg);
   border: 1px solid var(--glass-1-border);
   border-radius: var(--r-lg);
   box-shadow: var(--edge-light), var(--shadow-2);
@@ -624,7 +624,7 @@
   padding: 0 var(--s-4);
   font: var(--t-body);
   color: var(--text-1);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-wash);
   border: 1px solid var(--glass-2-border);
   border-radius: var(--r-md);
   outline: none;
@@ -638,32 +638,31 @@
 
 .input:hover,
 .select:hover {
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--hover-wash);
 }
 
 .input:focus,
 .select:focus {
-  border-color: rgba(123, 108, 255, 0.5);
-  box-shadow: 0 0 0 3px rgba(123, 108, 255, 0.16);
+  border-color: var(--accent-edge-strong);
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
 
 .input[aria-invalid="true"] {
-  border-color: rgba(255, 92, 122, 0.55);
+  border-color: var(--signal-edge);
 }
 
 .select {
   appearance: none;
   padding-right: var(--s-8);
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a6abc4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888890' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right var(--s-4) center;
 }
 
 .select option {
-  color: #f2f4ff;
-  background: #12142400;
-  background-color: #121424;
+  color: var(--text-1);
+  background-color: var(--ground-raised);
 }
 
 /* --- Switch --------------------------------------------------------------
@@ -677,7 +676,7 @@
   height: 23px;
   appearance: none;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--divider);
   border: 1px solid var(--glass-2-border);
   border-radius: var(--r-pill);
   transition: background var(--m-base) var(--ease-state),
@@ -709,7 +708,7 @@
 }
 
 .switch:hover:not(:checked) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--divider);
 }
 
 .toggle {
@@ -769,7 +768,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: linear-gradient(160deg, #0d0f1c, #090b15);
+  background: var(--board-bg);
   border: 1px solid var(--glass-2-border);
   border-radius: var(--r-lg);
   box-shadow: var(--edge-light), var(--shadow-2);
@@ -782,7 +781,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: radial-gradient(rgba(226, 231, 255, 0.075) 1px, transparent 1px);
+  background-image: radial-gradient(var(--board-grid) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 
@@ -827,7 +826,7 @@
   height: 22px;
   flex: none;
   margin: 0 2px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--divider);
 }
 
 .board__moderator {
@@ -885,11 +884,11 @@
 }
 
 .board__size:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--hover-wash);
 }
 
 .board__size[aria-pressed="true"] {
-  background: rgba(123, 108, 255, 0.18);
+  background: var(--accent-wash);
 }
 
 .board__size[aria-pressed="true"] span {
@@ -968,7 +967,7 @@
   font: var(--t-label);
   color: var(--text-2);
   text-align: left;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-wash);
   border: 1px solid var(--glass-2-border);
   border-radius: var(--r-md);
   transition: background var(--m-fast) var(--ease-state),
@@ -978,8 +977,8 @@
 
 .poll__option:hover {
   color: var(--text-1);
-  background: rgba(123, 108, 255, 0.14);
-  border-color: rgba(123, 108, 255, 0.34);
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
 }
 
 .poll__option:active {
@@ -995,7 +994,7 @@
   overflow: hidden;
   font: var(--t-label);
   color: var(--text-2);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--hover-wash);
   border-radius: var(--r-md);
 }
 
@@ -1004,17 +1003,17 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--share, 0%);
-  background: linear-gradient(90deg, rgba(123, 108, 255, 0.32), rgba(123, 108, 255, 0.18));
+  background: linear-gradient(90deg, var(--accent-edge), var(--accent-wash));
   transition: width var(--m-slow) var(--ease-out);
 }
 
 .poll__result.is-mine {
   color: var(--text-1);
-  box-shadow: inset 0 0 0 1px rgba(123, 108, 255, 0.4);
+  box-shadow: inset 0 0 0 1px var(--accent-edge);
 }
 
 .poll__result.is-mine .poll__bar {
-  background: linear-gradient(90deg, rgba(123, 108, 255, 0.5), rgba(123, 108, 255, 0.28));
+  background: linear-gradient(90deg, var(--accent-edge-strong), var(--accent-wash-hover));
 }
 
 .poll__result-label {
@@ -1058,5 +1057,631 @@
 @media (prefers-reduced-motion: reduce) {
   .poll__bar {
     transition: none;
+  }
+}
+
+/* ==========================================================================
+   Dashboard
+   --------------------------------------------------------------------------
+   Everything decided before entering a room. It is a page, not an app shell:
+   it scrolls, it breathes, and it is the only place with a brand mark at
+   full size.
+   ========================================================================== */
+
+.dash {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow-y: auto;
+}
+
+.dash__head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  padding: var(--s-4) var(--s-6);
+  background: color-mix(in srgb, var(--ground) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--divider);
+}
+
+.dash__tabs {
+  display: flex;
+  gap: var(--s-1);
+}
+
+.dash__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 34px;
+  padding: 0 var(--s-4);
+  font: var(--t-label);
+  color: var(--text-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state);
+}
+
+.dash__tab svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dash__tab:hover {
+  color: var(--text-1);
+  background: var(--hover-wash);
+}
+
+.dash__tab[aria-current="page"] {
+  color: var(--text-1);
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
+}
+
+.dash__head-end {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-left: auto;
+}
+
+.dash__body {
+  flex: 1;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--s-8) var(--s-6) var(--s-14);
+}
+
+.dash__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--s-5);
+  align-items: start;
+}
+
+.dash__single {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.dash__card {
+  padding: var(--s-6);
+  border-radius: var(--r-xl);
+}
+
+.dash__card-title {
+  font: var(--t-title);
+  letter-spacing: -0.02em;
+}
+
+.dash__card-sub {
+  margin: 6px 0 var(--s-5);
+  font: var(--t-body);
+  color: var(--text-3);
+}
+
+/* --- Segmented control ---------------------------------------------------- */
+
+.segments {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--field-bg);
+  border: 1px solid var(--glass-2-border);
+  border-radius: var(--r-md);
+}
+
+.segment {
+  flex: 1;
+  height: 32px;
+  font: var(--t-label);
+  color: var(--text-3);
+  border-radius: var(--r-xs);
+  transition: background var(--m-fast) var(--ease-state),
+    color var(--m-fast) var(--ease-state);
+}
+
+.segment:hover {
+  color: var(--text-1);
+}
+
+.segment[aria-checked="true"] {
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+
+/* --- Recent rooms --------------------------------------------------------- */
+
+.recents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recent {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  text-align: left;
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state);
+}
+
+.recent:hover {
+  background: var(--hover-wash);
+}
+
+.recent__mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  color: var(--accent-text);
+  background: var(--accent-wash);
+  border-radius: var(--r-sm);
+}
+
+.recent__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.recent__id {
+  min-width: 0;
+  flex: 1;
+}
+
+.recent__name {
+  display: block;
+  font: var(--t-label);
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent__code {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.recent__go {
+  color: var(--text-faint);
+}
+
+.recent__go svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 900px) {
+  .dash__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dash__head {
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-4);
+  }
+
+  .dash__head-end {
+    width: 100%;
+  }
+
+  .dash__body {
+    padding: var(--s-5) var(--s-4) var(--s-10);
+  }
+}
+
+/* ==========================================================================
+   Popover menus
+   ========================================================================== */
+
+.popover {
+  position: relative;
+  display: inline-flex;
+}
+
+.popover__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  min-width: 210px;
+  padding: var(--s-2);
+  border-radius: var(--r-md);
+  animation: menu-in var(--m-fast) var(--ease-out) both;
+}
+
+.popover__menu--wide {
+  min-width: 290px;
+}
+
+.popover__label {
+  padding: var(--s-2) var(--s-3) var(--s-1);
+  font: var(--t-caption);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.popover__note {
+  padding: var(--s-2) var(--s-3);
+  font: var(--t-caption);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.toggle--menu {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-xs);
+}
+
+.toggle--menu:hover {
+  background: var(--hover-wash);
+}
+
+/* ==========================================================================
+   Poll popup
+   --------------------------------------------------------------------------
+   It interrupts on purpose — that is what asking a room a question is — but
+   it never traps: it sits over the stage rather than the whole screen, and
+   it can always be dismissed.
+   ========================================================================== */
+
+.polldlg__layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--s-5);
+  background: color-mix(in srgb, var(--ground-deep) 55%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: state-in var(--m-base) var(--ease-out) both;
+}
+
+.polldlg {
+  width: min(100%, 440px);
+  max-height: 100%;
+  overflow-y: auto;
+  border-radius: var(--r-xl);
+  animation: polldlg-in var(--m-slow) var(--ease-out) both;
+}
+
+@keyframes polldlg-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+}
+
+.polldlg__head {
+  display: flex;
+  align-items: center;
+  padding: var(--s-3) var(--s-3) 0 var(--s-5);
+}
+
+.polldlg__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  font: var(--t-caption);
+  color: var(--accent-text);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.polldlg__badge svg {
+  width: 15px;
+  height: 15px;
+}
+
+.polldlg__body {
+  padding: var(--s-3) var(--s-5) var(--s-5);
+}
+
+.polldlg__question {
+  font: var(--t-title);
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.polldlg__foot {
+  font: var(--t-caption);
+  color: var(--text-3);
+}
+
+.poll__tick,
+.poll__correct {
+  display: inline-flex;
+  color: var(--accent-text);
+}
+
+.poll__tick svg,
+.poll__correct svg {
+  width: 16px;
+  height: 16px;
+}
+
+.poll__option.is-mine {
+  color: var(--text-1);
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
+}
+
+.poll__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.poll__result.is-correct {
+  box-shadow: inset 0 0 0 1px var(--positive);
+}
+
+.poll__correct {
+  position: relative;
+  color: var(--positive);
+}
+
+/* --- Composer extras ------------------------------------------------------ */
+
+.poll__option-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.poll__mark {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.poll__mark.is-correct {
+  color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 16%, transparent);
+}
+
+.poll__act {
+  height: 26px;
+  padding: 0 10px;
+}
+
+.poll__reveal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
+
+/* ==========================================================================
+   Poll notices in the chat
+   ========================================================================== */
+
+.msg--notice {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.msg-poll {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3);
+  text-align: left;
+  background: var(--accent-wash-soft);
+  border: 1px solid var(--accent-edge);
+  border-radius: var(--r-md);
+  transition: background var(--m-fast) var(--ease-state);
+}
+
+.msg-poll:hover {
+  background: var(--accent-wash);
+}
+
+.msg-poll__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: var(--accent-text);
+}
+
+.msg-poll__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.msg-poll__id {
+  min-width: 0;
+  flex: 1;
+}
+
+.msg-poll__title {
+  display: block;
+  font: var(--t-label);
+  color: var(--text-1);
+}
+
+.msg-poll__q {
+  display: block;
+  font: var(--t-caption);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-poll__go {
+  flex: none;
+  font: var(--t-caption);
+  color: var(--accent-text);
+}
+
+.msg-results {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--hover-wash);
+  border-radius: var(--r-md);
+}
+
+.msg-results__body {
+  font: var(--t-caption);
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   The door: people waiting to be let in
+   ========================================================================== */
+
+.people__scroll {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.waiting {
+  margin: var(--s-3);
+  padding: var(--s-3);
+  background: var(--accent-wash-soft);
+  border: 1px solid var(--accent-edge);
+  border-radius: var(--r-md);
+}
+
+.waiting__label {
+  margin-bottom: var(--s-2);
+  font: var(--t-caption);
+  color: var(--accent-text);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.waiting__row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+}
+
+.waiting__acts {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.waiting__acts .btn {
+  height: 30px;
+  padding: 0 var(--s-3);
+}
+
+.knocks {
+  animation: pulse-soft 2.4s var(--ease-state) infinite;
+}
+
+@keyframes pulse-soft {
+  50% {
+    border-color: var(--accent-edge);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knocks {
+    animation: none;
+  }
+}
+
+/* --- Lobby door ----------------------------------------------------------- */
+
+.lobby__top {
+  position: absolute;
+  top: var(--s-5);
+  right: var(--s-5);
+}
+
+.lobby__door {
+  animation: state-in var(--m-base) var(--ease-out) both;
+}
+
+.lobby__waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  background: var(--accent-wash-soft);
+  border: 1px solid var(--accent-edge);
+  border-radius: var(--r-md);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 2px solid var(--accent-edge);
+  border-top-color: var(--accent-bright);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+/* --- Recording pill ------------------------------------------------------- */
+
+.pill--rec {
+  color: var(--signal-text);
+  background: var(--signal-wash);
+  border-color: var(--signal-edge);
+}
+
+.dot--rec {
+  background: var(--signal);
+  animation: pulse 2.4s var(--ease-state) infinite;
+}
+
+.brand__mark--sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.brand__mark--sm svg {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 720px) {
+  .brand__mark--sm {
+    display: none;
   }
 }

@@ -8,15 +8,18 @@
 
 import { el } from "../dom";
 import { icons } from "../icons";
-import type { PollView } from "../types";
+import type { PollView, RevealMode } from "../types";
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 6;
 
 export interface PollHandlers {
-  onCreate: (question: string, options: string[]) => void;
+  onCreate: (question: string, options: string[], correct: number | null) => void;
   onVote: (poll: string, option: number) => void;
   onClose: (poll: string) => void;
+  onReveal: (poll: string, mode: RevealMode) => void;
+  /** Reopens the popup for a poll the viewer wants another look at. */
+  onOpen: (poll: string) => void;
 }
 
 export interface PollHandles {
@@ -25,6 +28,9 @@ export interface PollHandles {
   upsert: (poll: PollView) => void;
   setCanModerate: (can: boolean) => void;
   count: () => number;
+  get: (id: string) => PollView | undefined;
+  myVote: (id: string) => number | undefined;
+  recordVote: (id: string, option: number) => void;
 }
 
 export function buildPolls(handlers: PollHandlers): PollHandles {
@@ -56,6 +62,8 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
 
   const optionList = el("div", { class: "stack", style: "gap:var(--s-2)" });
   const optionInputs: HTMLInputElement[] = [];
+  /** Index of the option marked right, or null for an opinion poll. */
+  let correctIndex: number | null = null;
 
   function addOption(focus = false): void {
     if (optionInputs.length >= MAX_OPTIONS) return;
@@ -67,13 +75,28 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
       placeholder: `Option ${index + 1}`,
       "aria-label": `Option ${index + 1}`,
     }) as HTMLInputElement;
-    // Typing in the last field offers another, up to the maximum.
+
+    // Marking an answer is optional: a poll asking the room's opinion has no
+    // right answer, and forcing one would be a lie.
+    const mark = el("button", {
+      class: "poll__mark tip tip--end",
+      type: "button",
+      "data-tip": "Mark as the correct answer",
+      "aria-label": `Mark option ${index + 1} as correct`,
+      "aria-pressed": "false",
+      html: icons.check,
+    }) as HTMLButtonElement;
+    mark.addEventListener("click", () => {
+      correctIndex = correctIndex === index ? null : index;
+      paintComposer();
+    });
+
     input.addEventListener("input", () => {
       if (input.value.trim() && input === optionInputs[optionInputs.length - 1]) addOption();
       paintComposer();
     });
     optionInputs.push(input);
-    optionList.append(input);
+    optionList.append(el("div", { class: "poll__option-row" }, [input, mark]));
     if (focus) input.focus();
   }
 
@@ -101,11 +124,17 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
 
   function paintComposer(): void {
     submit.disabled = question.value.trim().length === 0 || filledOptions().length < MIN_OPTIONS;
+    optionList.querySelectorAll(".poll__mark").forEach((node, index) => {
+      const on = correctIndex === index;
+      node.setAttribute("aria-pressed", String(on));
+      node.classList.toggle("is-correct", on);
+    });
   }
   question.addEventListener("input", paintComposer);
 
   function resetComposer(): void {
     question.value = "";
+    correctIndex = null;
     optionInputs.length = 0;
     optionList.replaceChildren();
     addOption();
@@ -122,7 +151,11 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
       composerError.textContent = "A poll needs at least two options.";
       return;
     }
-    handlers.onCreate(question.value.trim(), options);
+    handlers.onCreate(
+      question.value.trim(),
+      options,
+      correctIndex !== null && correctIndex < options.length ? correctIndex : null
+    );
     composer.hidden = true;
     newPoll.hidden = false;
     resetComposer();
@@ -148,31 +181,35 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
 
   function renderPoll(poll: PollView): HTMLElement {
     const myVote = myVotes.get(poll.id);
-    // Participants see the tally only after answering, or once the poll has
-    // closed: showing it first would steer the vote. Moderators see it
-    // straight away — they are running the poll, and making a teacher vote in
-    // their own question to read the room is absurd.
+    // The panel is the operator's view and the archive. Live answering
+    // happens in the popup, so this always shows the tally to a moderator and
+    // to anyone who has already answered or whose poll has ended.
     const showResults = canModerate || myVote !== undefined || !poll.open;
 
     const body = el("div", { class: "poll__options" });
 
     poll.options.forEach((option, index) => {
+      const isCorrect = poll.correct === index;
       if (showResults) {
         const share = poll.total === 0 ? 0 : Math.round((poll.counts[index] / poll.total) * 100);
-        const row = el(
-          "div",
-          {
-            class: `poll__result${myVote === index ? " is-mine" : ""}`,
-            role: "listitem",
-            "aria-label": `${option}: ${poll.counts[index]} of ${poll.total} votes, ${share} percent`,
-          },
-          [
-            el("span", { class: "poll__bar", style: `--share:${share}%`, "aria-hidden": "true" }),
-            el("span", { class: "poll__result-label", text: option }),
-            el("span", { class: "poll__share num", text: `${share}%` }),
-          ]
+        body.append(
+          el(
+            "div",
+            {
+              class: `poll__result${myVote === index ? " is-mine" : ""}${isCorrect ? " is-correct" : ""}`,
+              role: "listitem",
+              "aria-label": `${option}: ${poll.counts[index]} of ${poll.total} votes, ${share} percent${isCorrect ? ", correct answer" : ""}`,
+            },
+            [
+              el("span", { class: "poll__bar", style: `--share:${share}%`, "aria-hidden": "true" }),
+              el("span", { class: "poll__result-label", text: option }),
+              ...(isCorrect
+                ? [el("span", { class: "poll__correct", html: icons.check, "aria-hidden": "true" })]
+                : []),
+              el("span", { class: "poll__share num", text: `${share}%` }),
+            ]
+          )
         );
-        body.append(row);
       } else {
         const button = el("button", { class: "poll__option", type: "button" }, [
           el("span", { text: option }),
@@ -180,8 +217,6 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
         button.addEventListener("click", () => {
           myVotes.set(poll.id, index);
           handlers.onVote(poll.id, index);
-          // Repaint at once so the answer feels immediate; the server's echo
-          // arrives a moment later with the updated totals.
           render();
         });
         body.append(button);
@@ -190,22 +225,49 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
 
     const meta = el("div", { class: "poll__meta" }, [
       el("span", {
-        class: "pill",
-        text: poll.open ? "Open" : "Closed",
-        ...(poll.open ? {} : { style: "opacity:.7" }),
+        class: poll.open ? "pill" : "pill",
+        text: poll.open ? "Open" : poll.revealed ? "Revealed" : "Ended",
+        ...(poll.open ? {} : { style: "opacity:.75" }),
       }),
-      el("span", {
-        class: "num",
-        text: poll.total === 1 ? "1 vote" : `${poll.total} votes`,
-      }),
+      el("span", { class: "num", text: poll.total === 1 ? "1 vote" : `${poll.total} votes` }),
     ]);
 
-    if (canModerate && poll.open) {
-      const close = el("button", { class: "btn", type: "button", style: "height:26px;padding:0 10px" }, [
-        el("span", { text: "Close" }),
+    if (poll.open) {
+      const reopen = el("button", { class: "btn poll__act", type: "button" }, [
+        el("span", { text: "Open" }),
       ]);
-      close.addEventListener("click", () => handlers.onClose(poll.id));
-      meta.append(close);
+      reopen.addEventListener("click", () => handlers.onOpen(poll.id));
+      meta.append(reopen);
+    }
+
+    if (canModerate) {
+      if (poll.open) {
+        const end = el("button", { class: "btn poll__act", type: "button" }, [
+          el("span", { text: "End" }),
+        ]);
+        end.addEventListener("click", () => handlers.onClose(poll.id));
+        meta.append(end);
+      }
+      if (!poll.revealed) {
+        // Publishing is a separate decision from ending: some questions want
+        // the tally shown, some only the answer, some neither.
+        const reveal = el("div", { class: "poll__reveal" }, []);
+        const modes: { mode: RevealMode; label: string }[] = [
+          { mode: "counts", label: "Show results" },
+          ...(poll.correct !== null || !poll.open
+            ? [{ mode: "correct" as RevealMode, label: "Show answer" }]
+            : []),
+          { mode: "both", label: "Show both" },
+        ];
+        for (const entry of modes) {
+          const button = el("button", { class: "btn poll__act", type: "button" }, [
+            el("span", { text: entry.label }),
+          ]);
+          button.addEventListener("click", () => handlers.onReveal(poll.id, entry.mode));
+          reveal.append(button);
+        }
+        meta.append(reveal);
+      }
     }
 
     return el("article", { class: "poll", role: "listitem" }, [
@@ -256,5 +318,13 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
       render();
     },
     count: () => polls.size,
+    get: (id) => polls.get(id),
+    myVote: (id) => myVotes.get(id),
+    recordVote(id, option) {
+      // The popup answers optimistically; the panel has to agree with it so
+      // reopening from the chat shows the choice already made.
+      myVotes.set(id, option);
+      render();
+    },
   };
 }

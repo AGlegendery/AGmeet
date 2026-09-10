@@ -1,15 +1,7 @@
-import { chromium } from "playwright";
+import { BASE, createRoom, launch, reporter } from "./helpers.mjs";
 
-// CI images often ship a pre-installed Chromium that does not match the
-// revision this Playwright version would download. Point CHROMIUM_PATH at it
-// rather than fetching a second copy.
-const browser = await chromium.launch({
-  args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
-         "--autoplay-policy=no-user-gesture-required"],
-  ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
-});
-const fail = [];
-const check = (n, ok, d = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${n}${d ? ` — ${d}` : ""}`); if (!ok) fail.push(n); };
+const browser = await launch();
+const { check, finish } = reporter();
 
 const AUDIT = `(() => {
   const parse = (c) => {
@@ -93,19 +85,46 @@ async function audit(label, page) {
   }
 }
 
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-const page = await ctx.newPage();
-await page.goto(`${process.env.AGMEET_URL ?? "http://127.0.0.1:8080"}/r/a11y-room`);
-await page.waitForSelector(".lobby__card");
+/**
+ * Every view is audited in both themes. A light theme that has not been
+ * contrast-checked is not a light theme, it is a second chance to fail.
+ */
+const page = await createRoom(browser, "Nadia Kowalczyk", "a11y-room");
 await page.waitForTimeout(1200);
-await audit("lobby", page);
-await page.screenshot({ path: `${process.env.OUT ?? "."}/lobby.png` });
 
-await page.fill("#agmeet-name", "Nadia Kowalczyk");
-await page.click('button[type="submit"]');
-await page.waitForSelector(".app");
-await page.waitForTimeout(1500);
-await audit("meeting", page);
+for (const theme of ["dark", "light"]) {
+  await page.evaluate((value) => {
+    localStorage.setItem("agmeet.theme", value);
+    document.documentElement.dataset.theme = value;
+  }, theme);
+  await page.waitForTimeout(400);
+  await audit(`meeting (${theme})`, page);
+  if (theme === "dark") {
+    await page.mouse.move(10, 10);
+    await page.screenshot({ path: `${process.env.OUT ?? "."}/meeting-dark.png` });
+  } else {
+    await page.mouse.move(10, 10);
+    await page.screenshot({ path: `${process.env.OUT ?? "."}/meeting-light.png` });
+  }
+}
+await page.evaluate(() => localStorage.setItem("agmeet.theme", "dark"));
+
+// The dashboard is the first thing anyone sees, in both themes.
+{
+  const dash = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  await dash.goto(BASE);
+  await dash.waitForSelector(".dash");
+  for (const theme of ["dark", "light"]) {
+    await dash.evaluate((value) => {
+      localStorage.setItem("agmeet.theme", value);
+      document.documentElement.dataset.theme = value;
+    }, theme);
+    await dash.waitForTimeout(300);
+    await audit(`dashboard (${theme})`, dash);
+    await dash.screenshot({ path: `${process.env.OUT ?? "."}/dash-${theme}.png` });
+  }
+  await dash.context().close();
+}
 
 // Keyboard reachability of every dock control.
 const reachable = await page.evaluate(() => {
@@ -160,13 +179,12 @@ for (const g of gradientContrast) {
   check(`gradient fill ${g.sel} clears ${g.need}:1`, g.ratio >= g.need, `${g.ratio}:1`);
 }
 
-const labelled = await page.evaluate(() =>
-  [...document.querySelectorAll("button")].every(
-    (b) => (b.getAttribute("aria-label") || b.textContent.trim()).length > 0
-  )
+const unnamed = await page.evaluate(() =>
+  [...document.querySelectorAll("button")]
+    .filter((b) => (b.getAttribute("aria-label") || b.textContent.trim()).length === 0)
+    .map((b) => `${b.className || "(no class)"}`)
 );
-check("every button has an accessible name", labelled);
+check("every button has an accessible name", unnamed.length === 0, unnamed.join(", "));
 
 await browser.close();
-console.log(`\n${fail.length === 0 ? "ACCESSIBILITY CHECKS PASSED" : `${fail.length} FAILED`}`);
-process.exit(fail.length === 0 ? 0 : 1);
+process.exit(finish() === 0 ? 0 : 1);

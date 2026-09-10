@@ -33,6 +33,8 @@ export interface DockHandles {
   setState: (state: DockState) => void;
   setScreenAvailable: (available: boolean) => void;
   setBoardAvailable: (available: boolean) => void;
+  /** Room policy can forbid a guest a microphone or camera entirely. */
+  setMediaAllowed: (allowed: boolean) => void;
 }
 
 function control(
@@ -198,6 +200,18 @@ export function buildDock(handlers: DockHandlers): DockHandles {
       if (!available) {
         screen.setAttribute("data-tip", "Screen sharing needs a desktop browser");
       }
+    },
+    setMediaAllowed(allowed) {
+      // Disabled rather than hidden: a control that vanishes leaves people
+      // hunting for it, while a disabled one with a tooltip explains itself.
+      mic.disabled = !allowed;
+      cam.disabled = !allowed;
+      if (!allowed) {
+        const reason = "The host has turned this off for guests";
+        mic.setAttribute("data-tip", reason);
+        cam.setAttribute("data-tip", reason);
+      }
+      // setState repaints the real labels; this only clears a stale excuse.
     },
     setBoardAvailable(available) {
       // Opening the board for everyone is a moderator action; the control is

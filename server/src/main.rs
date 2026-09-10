@@ -10,14 +10,53 @@ mod signaling;
 
 use std::sync::Arc;
 
+use axum::extract::{Path, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::routing::get;
-use axum::Router;
+use axum::{Json, Router};
+use serde::Serialize;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use room::{AppState, Config};
+use room::{valid_room_id, AppState, Config};
+
+/// What a prospective joiner is told about a room before entering it.
+///
+/// Deliberately thin: whether it exists, what it is called, how many people
+/// are in it, and what the door asks for. Enough to label a button honestly
+/// and no more — the participant list is nobody's business until they are in.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RoomInfo {
+    exists: bool,
+    name: Option<String>,
+    lock: Option<protocol::RoomLock>,
+    participants: usize,
+    /// Somebody is at the door. Lets the client say "the host has been asked"
+    /// rather than leaving an approval-gated room looking broken.
+    waiting: usize,
+}
+
+async fn room_info(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Json<RoomInfo> {
+    if !valid_room_id(&id) {
+        return Json(RoomInfo { exists: false, name: None, lock: None, participants: 0, waiting: 0 });
+    }
+    let rooms = state.rooms.read().await;
+    Json(match rooms.get(&id) {
+        Some(room) => RoomInfo {
+            exists: true,
+            name: Some(room.name.clone()),
+            lock: Some(room.settings.lock),
+            participants: room.participants.len(),
+            waiting: room.waiting.len(),
+        },
+        None => RoomInfo { exists: false, name: None, lock: None, participants: 0, waiting: 0 },
+    })
+}
 
 fn env_or(key: &str, fallback: &str) -> String {
     std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| fallback.to_string())
@@ -81,6 +120,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/ws", get(signaling::upgrade))
+        .route("/api/room/{id}", get(room_info))
         .route("/healthz", get(|| async { (StatusCode::OK, "ok") }))
         .with_state(state)
         .fallback_service(assets)

@@ -46,10 +46,7 @@ body::before {
   inset: -25%;
   z-index: -2;
   pointer-events: none;
-  background:
-    radial-gradient(46% 40% at 18% 8%, rgba(123, 108, 255, 0.17), transparent 62%),
-    radial-gradient(42% 46% at 88% 92%, rgba(76, 201, 240, 0.1), transparent 60%),
-    radial-gradient(60% 50% at 60% 40%, rgba(90, 77, 224, 0.07), transparent 70%);
+  background: var(--atmosphere);
   filter: blur(28px);
 }
 
@@ -60,7 +57,7 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.028;
+  opacity: var(--grain-opacity);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -134,7 +131,7 @@ svg {
 .scroll {
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(226, 231, 255, 0.16) transparent;
+  scrollbar-color: var(--text-faint) transparent;
 }
 
 .scroll::-webkit-scrollbar {
@@ -142,14 +139,14 @@ svg {
 }
 
 .scroll::-webkit-scrollbar-thumb {
-  background: rgba(226, 231, 255, 0.14);
+  background: var(--text-faint);
   border-radius: var(--r-pill);
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 .scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(226, 231, 255, 0.24);
+  background: var(--text-3);
   background-clip: content-box;
 }
 

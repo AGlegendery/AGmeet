@@ -8,7 +8,33 @@ export interface MediaState {
   cam: boolean;
   screen: boolean;
   hand: boolean;
+  /** Recording locally. Recordings never reach the server; this only lets the
+   *  room see that it is being recorded. */
+  recording: boolean;
 }
+
+export type RoomLock = "open" | "passcode" | "approval";
+
+/** Room policy, fixed when the room is opened and adjustable by moderators. */
+export interface RoomSettings {
+  classroom: boolean;
+  whiteboard: boolean;
+  guestMedia: boolean;
+  allowRecording: boolean;
+  lock: RoomLock;
+}
+
+export interface CreateOptions {
+  roomName?: string;
+  classroom: boolean;
+  whiteboard: boolean;
+  guestMedia: boolean;
+  allowRecording: boolean;
+  lock: RoomLock;
+  passcode?: string;
+}
+
+export type RevealMode = "counts" | "correct" | "both";
 
 export interface Participant extends MediaState {
   id: ParticipantId;
@@ -17,6 +43,9 @@ export interface Participant extends MediaState {
   joinedAt: number;
 }
 
+/** Polls announce themselves in the chat, so a line is not always text. */
+export type ChatKind = "text" | "pollStarted" | "pollResults";
+
 export interface ChatMessage {
   id: string;
   from: ParticipantId;
@@ -24,6 +53,8 @@ export interface ChatMessage {
   role: Role;
   body: string;
   at: number;
+  kind: ChatKind;
+  poll: string | null;
 }
 
 export interface Stroke {
@@ -48,13 +79,15 @@ export interface PollView {
   total: number;
   open: boolean;
   createdAt: number;
+  /** Withheld until the operator reveals it. */
+  correct: number | null;
+  revealed: boolean;
 }
 
-export interface RoomView {
+export interface RoomView extends RoomSettings {
   id: string;
   name: string;
   startedAt: number;
-  classroom: boolean;
   participants: Participant[];
   chat: ChatMessage[];
   board: BoardView;
@@ -64,7 +97,17 @@ export interface RoomView {
 export type ModAction = "requestMute" | "remove" | "promoteModerator" | "demoteModerator";
 
 export type ClientMessage =
-  | ({ t: "join"; room: string; roomName?: string; name: string; classroom: boolean } & MediaState)
+  | {
+      t: "join";
+      room: string;
+      name: string;
+      create?: CreateOptions;
+      passcode?: string;
+      media: MediaState;
+    }
+  | { t: "admit"; id: ParticipantId }
+  | { t: "deny"; id: ParticipantId }
+  | { t: "settings"; whiteboard?: boolean; guestMedia?: boolean; allowRecording?: boolean }
   | { t: "signal"; to: ParticipantId; payload: unknown }
   | { t: "chat"; body: string }
   | ({ t: "media" } & MediaState)
@@ -75,9 +118,10 @@ export type ClientMessage =
   | { t: "boardClear" }
   | { t: "boardOpen"; open: boolean }
   | { t: "boardLock"; locked: boolean }
-  | { t: "pollCreate"; question: string; options: string[] }
+  | { t: "pollCreate"; question: string; options: string[]; correct?: number | null }
   | { t: "pollVote"; poll: string; option: number }
   | { t: "pollClose"; poll: string }
+  | { t: "pollReveal"; poll: string; mode: RevealMode }
   | { t: "ping" };
 
 export type ServerMessage =
@@ -96,6 +140,13 @@ export type ServerMessage =
   | { t: "boardOpen"; open: boolean }
   | { t: "boardLock"; locked: boolean }
   | { t: "poll"; poll: PollView }
+  | { t: "needPasscode"; retry: boolean }
+  | { t: "knocking" }
+  | { t: "knock"; id: ParticipantId; name: string; since: number }
+  | { t: "knockWithdrawn"; id: ParticipantId }
+  | { t: "denied"; reason: string }
+  | { t: "roomMissing" }
+  | { t: "settingsChanged"; settings: RoomSettings }
   | { t: "error"; message: string }
   | { t: "pong" };
 

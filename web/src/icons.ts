@@ -71,6 +71,17 @@ export const icons = {
   poll: svg('<path d="M4 20V9M10 20V4M16 20v-7M22 20H2"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
 
+  // --- Settings, theme, recording ------------------------------------------
+  refresh: svg('<path d="M20 11.5a8 8 0 1 0-.7 3.8"/><path d="M20 5v6.5h-6.5"/>'),
+  sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>'),
+  moon: svg('<path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2"/>'),
+  monitor: svg('<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20.5h7M12 16.5v4"/>'),
+  record: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>'),
+  stop: svg('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>'),
+  download: svg('<path d="M12 3.5v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4.5 19.5h15"/>'),
+  sliders: svg('<path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/>'),
+  doorbell: svg('<path d="M6.5 17.5V11a5.5 5.5 0 0 1 11 0v6.5"/><path d="M4.5 17.5h15M10 20.5h4"/><path d="M12 5.5V3.5"/>'),
+
   // --- Reactions -----------------------------------------------------------
   thumbsup: svg('<path d="M7 21V10l4.2-6.4a1.5 1.5 0 0 1 2.7 1.1L13 10h5.2a2 2 0 0 1 2 2.4l-1.4 6.6a2 2 0 0 1-2 1.6z"/><path d="M7 10H4.8A1.8 1.8 0 0 0 3 11.8v7.4A1.8 1.8 0 0 0 4.8 21H7"/>'),
   clap: svg('<path d="M8.4 12.8 5.6 10a1.6 1.6 0 0 1 2.3-2.3l2.5 2.5"/><path d="m11 8.6-2-2a1.6 1.6 0 0 1 2.3-2.3l4.9 4.9"/><path d="M13.6 6.6a1.6 1.6 0 1 1 2.3-2.2l4 4a6.4 6.4 0 0 1-9 9L7 13.5"/>'),

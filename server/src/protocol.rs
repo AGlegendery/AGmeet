@@ -27,6 +27,50 @@ impl Role {
     }
 }
 
+/// How a room admits people.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RoomLock {
+    /// Anyone with the link walks in.
+    #[default]
+    Open,
+    /// A shared passcode set by the operator.
+    Passcode,
+    /// A moderator admits each arrival by hand.
+    Approval,
+}
+
+/// Everything the operator decides when the room is created.
+///
+/// These are room policy, not preferences: they gate what the server accepts,
+/// so a client that hides a control is a convenience rather than the
+/// enforcement.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomSettings {
+    /// Teacher priority on the stage and moderation over the room.
+    pub classroom: bool,
+    /// Whether the whiteboard exists in this room at all.
+    pub whiteboard: bool,
+    /// Whether guests may turn a microphone or camera on.
+    pub guest_media: bool,
+    /// Whether anyone but a moderator may record.
+    pub allow_recording: bool,
+    pub lock: RoomLock,
+}
+
+impl Default for RoomSettings {
+    fn default() -> Self {
+        Self {
+            classroom: false,
+            whiteboard: true,
+            guest_media: true,
+            allow_recording: false,
+            lock: RoomLock::Open,
+        }
+    }
+}
+
 /// Per-participant media state, mirrored to everyone in the room.
 ///
 /// The default is everything off: a client that omits it joins muted with no
@@ -37,6 +81,10 @@ pub struct MediaState {
     pub cam: bool,
     pub screen: bool,
     pub hand: bool,
+    /// This participant is recording locally. Recordings never touch the
+    /// server; this exists so the room can see it is being recorded.
+    #[serde(default)]
+    pub recording: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +99,18 @@ pub struct ParticipantView {
     pub joined_at: u64,
 }
 
+/// What a chat line is. Polls announce themselves in the chat so the notice
+/// survives the popup being dismissed, reaches late joiners, and gives
+/// somebody a way back in to change their answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatKind {
+    #[default]
+    Text,
+    PollStarted,
+    PollResults,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMessage {
@@ -60,6 +120,9 @@ pub struct ChatMessage {
     pub role: Role,
     pub body: String,
     pub at: u64,
+    pub kind: ChatKind,
+    /// The poll this line refers to, for the two poll kinds.
+    pub poll: Option<Uuid>,
 }
 
 /// One pen stroke on the whiteboard.
@@ -101,6 +164,21 @@ pub struct PollView {
     pub total: u32,
     pub open: bool,
     pub created_at: u64,
+    /// Withheld until the operator reveals it, so the answer cannot be read
+    /// out of the wire before the room has finished voting.
+    pub correct: Option<usize>,
+    pub revealed: bool,
+}
+
+/// What an operator chooses to publish when a poll ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RevealMode {
+    /// How the room answered, as percentages.
+    Counts,
+    /// Which option was right.
+    Correct,
+    Both,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -110,7 +188,8 @@ pub struct RoomView {
     pub name: String,
     /// Unix millis of the first join, so every client shows the same duration.
     pub started_at: u64,
-    pub classroom: bool,
+    #[serde(flatten)]
+    pub settings: RoomSettings,
     pub participants: Vec<ParticipantView>,
     pub chat: Vec<ChatMessage>,
     pub board: BoardView,
@@ -133,19 +212,31 @@ pub enum ModAction {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "t", rename_all = "camelCase")]
+// `rename_all` renames the variants; `rename_all_fields` renames the fields
+// inside them. Without the second, a multi-word field such as `guest_media`
+// silently never matches the `guestMedia` the client sends.
+#[serde(tag = "t", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ClientMessage {
     /// First message on a socket. Anything else before this is rejected.
+    ///
+    /// The same message creates a room and joins one: `create` is present
+    /// only when the sender means to open it, which keeps a typo in a room
+    /// code from silently opening an empty room instead of reporting that
+    /// the class has not started.
     Join {
         room: String,
-        #[serde(default)]
-        room_name: Option<String>,
         name: String,
         #[serde(default)]
-        classroom: bool,
+        create: Option<CreateOptions>,
+        #[serde(default)]
+        passcode: Option<String>,
         #[serde(default)]
         media: MediaState,
     },
+
+    /// A moderator's verdict on someone waiting to be let in.
+    Admit { id: ParticipantId },
+    Deny { id: ParticipantId },
     /// Opaque WebRTC payload forwarded verbatim to a single peer.
     Signal { to: ParticipantId, payload: serde_json::Value },
     Chat { body: String },
@@ -172,9 +263,28 @@ pub enum ClientMessage {
     BoardOpen { open: bool },
     BoardLock { locked: bool },
 
-    PollCreate { question: String, options: Vec<String> },
+    PollCreate {
+        question: String,
+        options: Vec<String>,
+        /// Marks one option as right. Withheld from the room until revealed.
+        #[serde(default)]
+        correct: Option<usize>,
+    },
     PollVote { poll: Uuid, option: usize },
+    /// Ends the poll. No further answers or changes are accepted.
     PollClose { poll: Uuid },
+    /// Publishes the outcome to the room.
+    PollReveal { poll: Uuid, mode: RevealMode },
+
+    /// Changes room policy mid-session. Moderators only.
+    Settings {
+        #[serde(default)]
+        whiteboard: Option<bool>,
+        #[serde(default)]
+        guest_media: Option<bool>,
+        #[serde(default)]
+        allow_recording: Option<bool>,
+    },
 
     /// Keeps intermediaries from closing an idle socket.
     Ping,
@@ -185,7 +295,7 @@ pub enum ClientMessage {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "t", rename_all = "camelCase")]
+#[serde(tag = "t", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ServerMessage {
     /// Sent once, in reply to `Join`.
     Welcome {
@@ -227,7 +337,50 @@ pub enum ServerMessage {
     /// Sent whenever a poll is created, voted on, or closed. Carries the whole
     /// poll so a client never has to reconcile a partial update.
     Poll { poll: PollView },
+    /// The room needs a passcode, or the one supplied was wrong. `retry` is
+    /// false on the first ask so the client can tell "enter it" apart from
+    /// "that was not it".
+    NeedPasscode { retry: bool },
+    /// Waiting for a moderator to admit this socket.
+    Knocking,
+    /// Somebody is waiting to be let in. Sent to moderators only.
+    Knock { id: ParticipantId, name: String, since: u64 },
+    /// A knocker gave up or was refused; moderators drop them from the list.
+    KnockWithdrawn { id: ParticipantId },
+    /// This socket was refused. The connection closes after it.
+    Denied { reason: String },
+    /// The room does not exist and the sender did not ask to create it.
+    RoomMissing,
+
+    SettingsChanged { settings: RoomSettings },
+
     /// Recoverable problem; the socket stays open.
     Error { message: String },
     Pong,
+}
+
+/// Everything the operator decides when opening a room.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateOptions {
+    #[serde(default)]
+    pub room_name: Option<String>,
+    #[serde(default)]
+    pub classroom: bool,
+    #[serde(default = "yes")]
+    pub whiteboard: bool,
+    #[serde(default = "yes")]
+    pub guest_media: bool,
+    #[serde(default)]
+    pub allow_recording: bool,
+    #[serde(default)]
+    pub lock: RoomLock,
+    /// Only meaningful with `RoomLock::Passcode`. Hashed on arrival and never
+    /// stored or echoed in the clear.
+    #[serde(default)]
+    pub passcode: Option<String>,
+}
+
+fn yes() -> bool {
+    true
 }

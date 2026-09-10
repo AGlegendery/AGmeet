@@ -9,8 +9,12 @@ lets it run on a small VPS and start in milliseconds.
 - **No frontend framework** — ~15 KB of JavaScript over the wire, gzipped.
 - **Peer-to-peer media** — the server never sees or forwards a video frame.
 - **Nothing to install** — participants open a link.
-- **Classroom tools** — a shared whiteboard and anonymous polls, in the same
-  design system as everything else.
+- **Classroom tools** — a shared whiteboard, polls that pop up and report back
+  to the chat, and local recording you download or discard.
+- **Room policy** — open, passcode, or admit each arrival by hand; guests'
+  cameras and recording are the operator's call, enforced by the server.
+- **Light and dark** — graphite neutrals, violet for action, both themes
+  contrast-checked.
 - **Liquid glass, if the machine can afford it** — a real WebGL refraction
   shader on the floating bars, gated on the client's capabilities and its
   measured frame rate.
@@ -105,6 +109,51 @@ almost nothing. For thirty simultaneous cameras it is the wrong shape, and
 you want an SFU — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for where
 that would slot in.
 
+## How a room works
+
+There is no account and no sidebar. Everything you decide happens before you
+are in a room:
+
+1. **Dashboard** — open a room (name, code, door policy, whiteboard, guest
+   media, recording), or join one by code or by pasting a link.
+2. **Lobby** — check the camera and microphone, and meet the door. A passcode
+   room asks for one here; an approval room says **Ask to join the room**
+   rather than *Join*, and waits.
+3. **Room** — the stage takes the whole window. The only things left to
+   configure are the room itself and the appearance, and both are in the
+   header.
+
+A room exists while someone is in it. Its code is its link, so
+`https://your-server/r/std-sr2-rrp` is all anybody needs.
+
+### The door
+
+| Policy | What happens |
+| --- | --- |
+| Open | Anyone with the link walks in. |
+| Passcode | Everyone is asked for a shared code, hashed with SHA-256 on arrival and never stored in the clear. |
+| Ask to join | A moderator admits or refuses each arrival. The joiner is told they are waiting, not left on a spinner. |
+
+The first person through the door hosts, whatever the policy says — otherwise
+an approval-gated room could never be opened.
+
+### Recording
+
+Recording happens on the recorder's own machine: the stage is composited onto
+a canvas, the audio is mixed in the browser, and the result is a WebM you
+either download or discard when you stop. **Nothing is uploaded and nothing is
+stored on the server** — the room is only told that it is being recorded, so
+everybody can see the indicator. Whether anyone but a moderator may record is
+a room setting.
+
+### Polls
+
+A poll pops up over the stage and can always be dismissed. Answering closes
+it, and a notice stays in the chat so anyone can go back in and change their
+answer until the operator ends the poll. Ending it locks the answers;
+revealing publishes the tally, the correct option, or both, into the chat
+where the room is already looking. Votes are counted, never attributed.
+
 ## Visual tiers
 
 The floating bars — the meeting control dock, the whiteboard toolbar, the
@@ -152,6 +201,10 @@ localStorage.setItem("agmeet.glass", "full"); // or "enhanced" / "minimal"
 | <kbd>P</kbd> | Participants |
 | <kbd>O</kbd> | Polls |
 | <kbd>B</kbd> | Whiteboard (hosts and moderators) |
+
+Appearance and room policy live in the room header. The theme is dark by
+default rather than following the OS: a stage is mostly video, and video sits
+better on a dark ground.
 | <kbd>Esc</kbd> | Close the open menu |
 
 Keys are ignored while a text field has focus.
@@ -170,7 +223,8 @@ Two environment variables, both optional: `AGMEET_URL` to point at a server
 somewhere other than `http://127.0.0.1:8080`, and `CHROMIUM_PATH` to use a
 Chromium that is already on the machine instead of downloading one.
 
-`glass.test.mjs` asserts that a weak client resolves to a lower tier and
+`room.test.mjs` covers the dashboard, the three door policies, guest-media
+policy, recording, and both themes. `glass.test.mjs` asserts that a weak client resolves to a lower tier and
 never requests the shader bundle, and that a forced `full` client renders the
 shader canvas. `meeting.test.mjs` covers joining, peer-to-peer video, chat, media state,
 moderation, the adaptive grid and the mobile layout. `classroom.test.mjs`
@@ -191,7 +245,9 @@ web/             TypeScript client, no framework
   src/media.ts     devices, screen capture, speech detection
   src/styles/      the design system, tokens first
   src/glass.ts     capability tiers, lazy loading, the frame-rate watchdog
-  src/ui/          stage, dock, panel, lobby, shell, board, polls
+  src/recorder.ts  local canvas + audio recording
+  src/theme.ts     light and dark
+  src/ui/          dashboard, lobby, shell, stage, dock, panel, board, polls
 tests/           browser tests
 docs/            architecture and design notes
 ```

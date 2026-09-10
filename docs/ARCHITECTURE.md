@@ -150,6 +150,28 @@ showing it first would steer the vote. Moderators see it immediately, because
 they are running the poll, and making a teacher vote in their own question to
 read the room is absurd.
 
+## Room policy is enforced where the state changes
+
+`server/src/signaling.rs`.
+
+A client that hides a control is a convenience. The enforcement is in the
+handler that mutates the state: a guest's `Media` update has `mic`, `cam` and
+`screen` forced to false when the room forbids guest media, `recording` is
+cleared when the room forbids it, and `BoardOpen` is refused outright in a
+room created without a whiteboard. Withdrawing permission mid-session also
+reaches the people it applies to — their media is cleared and rebroadcast —
+rather than only greying out a button on the moderator's screen.
+
+The passcode is hashed with SHA-256 on arrival and compared in constant time.
+The room holds only the digest, so a memory dump or a stray log line cannot
+hand out the credential, and it dies with the room like everything else.
+
+A caution worth writing down: `#[serde(rename_all = "camelCase")]` on an enum
+renames the **variants**, not the fields inside them. `Settings { guest_media }`
+therefore never matched the `guestMedia` the client sent, and the setting
+silently did nothing. Both message enums now carry `rename_all_fields` as
+well.
+
 ## Moderation is advisory where it has to be
 
 The server cannot switch off a microphone it has no connection to, so it does
@@ -244,10 +266,35 @@ never learns a tier exists.
 - **No persistence.** Nothing is written to disk. Chat, the whiteboard and
   polls live in memory, each bounded, and all go when the room empties. An
   export button on the board would be a reasonable first thing to add.
-- **No recording.** It would need a media server, which is the thing this
-  design exists to avoid.
+- **No server-side recording.** Recording is local: the stage is composited
+  onto a canvas, the audio mixed in the browser, and the WebM handed to the
+  person who started it. Recording *through the server* would need a media
+  server, which is the thing this design exists to avoid.
 - **No third-party services.** The only external dependency a deployment can
   need is a TURN server, and you run that yourself.
+
+## Two themes, one neutral
+
+`web/src/styles/tokens.css`.
+
+The neutral family is graphite — a true grey with no blue cast — so the
+interface reads as a piece of hardware rather than a dark blue app, and violet
+is reserved for action. Both themes share the accent and the shape, spacing,
+type and motion scales; only the surface and text roles change.
+
+The light theme is not an inversion. The greys stay graphite, the glass
+becomes a white frost rather than a dark one, and the accent darkens so it
+still carries white text: `#8b5cf6` gives white only 4.23:1, which is why the
+colour that *fills* a control is `#7c3aed` at 5.7:1 while the lighter violet
+survives as `--accent-bright` for text and glows on dark surfaces, where it is
+never behind text.
+
+Two things stay dark in both themes on purpose: video tiles and the
+whiteboard. A light frame around a camera feed is glare, and light ink on a
+dark board is what a projector actually shows well.
+
+`tests/accessibility.test.mjs` composites every glass layer and audits both
+themes across the dashboard and the meeting.
 
 ## Design system
 

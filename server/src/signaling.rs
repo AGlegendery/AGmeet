@@ -13,9 +13,9 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::protocol::{
-    ChatMessage, ClientMessage, ModAction, ParticipantId, Role, ServerMessage,
+    ChatKind, ChatMessage, ClientMessage, ModAction, ParticipantId, RevealMode, Role, ServerMessage,
 };
-use crate::room::{now_millis, AppState, JoinError};
+use crate::room::{now_millis, AppState, JoinError, JoinOutcome, JoinRequest};
 
 /// Longest chat message accepted, in characters.
 const MAX_CHAT_LEN: usize = 2000;
@@ -73,14 +73,28 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
         };
 
         match (&session, parsed) {
-            (None, ClientMessage::Join { room, room_name, name, classroom, media }) => {
-                match state
-                    .join(&room, room_name, classroom, name, media, outbox.clone())
-                    .await
-                {
-                    Ok((id, role)) => {
+            (None, ClientMessage::Join { room, name, create, passcode, media }) => {
+                let request = JoinRequest { name, create, passcode, media };
+                match state.join(&room, request, outbox.clone()).await {
+                    Ok(JoinOutcome::Admitted(id, role)) => {
                         session = Some((room.clone(), id));
                         announce_join(&state, &room, id, role).await;
+                    }
+                    Ok(JoinOutcome::Knocking(id)) => {
+                        // The socket stays open and idle until a moderator
+                        // decides. Its id is the one it will keep if admitted,
+                        // so the cleanup path works either way.
+                        session = Some((room.clone(), id));
+                        let _ = outbox.send(ServerMessage::Knocking);
+                    }
+                    Ok(JoinOutcome::NeedPasscode { retry }) => {
+                        let _ = outbox.send(ServerMessage::NeedPasscode { retry });
+                        // Deliberately not closed: the client re-sends Join
+                        // with the passcode on the same socket.
+                    }
+                    Ok(JoinOutcome::Missing) => {
+                        let _ = outbox.send(ServerMessage::RoomMissing);
+                        break;
                     }
                     Err(error) => {
                         let _ = outbox.send(ServerMessage::Error { message: join_error(error) });
@@ -104,6 +118,10 @@ async fn connection(socket: WebSocket, state: Arc<AppState>) {
     }
 
     if let Some((room, id)) = session {
+        // The socket may have been a participant or still at the door. Both
+        // calls ignore an id they do not know, so there is no state to track
+        // just to pick between them.
+        state.withdraw_knock(&room, id, None).await;
         state.leave(&room, id).await;
     }
     drop(outbox);
@@ -140,6 +158,17 @@ async fn announce_join(state: &AppState, room_id: &str, id: ParticipantId, role:
     // WebRTC offer. Making the established peer the offerer means the two
     // sides never negotiate simultaneously.
     room.broadcast_except(id, &ServerMessage::Joined { participant: view });
+
+    // A moderator arriving mid-session inherits the queue at the door.
+    if role.can_moderate() {
+        for knocker in &room.waiting {
+            let _ = participant.outbox.send(ServerMessage::Knock {
+                id: knocker.id,
+                name: knocker.name.clone(),
+                since: knocker.since,
+            });
+        }
+    }
 
     if role == Role::Host {
         tracing::info!(room = room_id, %id, "room opened");
@@ -200,16 +229,31 @@ async fn handle(
                 role: sender.role,
                 body,
                 at: now_millis(),
+                kind: ChatKind::Text,
+                poll: None,
             };
             room.push_chat(message.clone());
             room.broadcast(&ServerMessage::Chat { message });
             true
         }
 
-        ClientMessage::Media { state: media } => {
+        ClientMessage::Media { state: mut media } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
+            let settings = room.settings;
             let Some(participant) = room.participants.get_mut(&id) else { return true };
+            let privileged = participant.role.can_moderate();
+
+            // A client that hides these controls is a convenience. This is
+            // the enforcement.
+            if !settings.guest_media && !privileged {
+                media.mic = false;
+                media.cam = false;
+                media.screen = false;
+            }
+            if !settings.allow_recording && !privileged {
+                media.recording = false;
+            }
             participant.media = media;
             room.broadcast(&ServerMessage::Media { id, state: media });
             true
@@ -291,6 +335,10 @@ async fn handle(
             if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
                 return true;
             }
+            // A room created without a whiteboard does not grow one.
+            if open && !room.settings.whiteboard {
+                return true;
+            }
             room.board.open = open;
             room.broadcast(&ServerMessage::BoardOpen { open });
             true
@@ -308,14 +356,33 @@ async fn handle(
         }
 
         // ------------------------------------------------------------ polls
-        ClientMessage::PollCreate { question, options } => {
+        ClientMessage::PollCreate { question, options, correct } => {
             let mut rooms = state.rooms.write().await;
             let Some(room) = rooms.get_mut(room_id) else { return true };
             if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
                 return true;
             }
-            match room.add_poll(question, options) {
-                Ok(poll) => room.broadcast(&ServerMessage::Poll { poll }),
+            let author = room.participants.get(&id).map(|p| (p.name.clone(), p.role));
+            match room.add_poll(question, options, correct) {
+                Ok(poll) => {
+                    let poll_id = poll.id;
+                    let question = poll.question.clone();
+                    room.broadcast(&ServerMessage::Poll { poll });
+                    if let Some((name, role)) = author {
+                        let message = ChatMessage {
+                            id: Uuid::new_v4(),
+                            from: id,
+                            author: name,
+                            role,
+                            body: question,
+                            at: now_millis(),
+                            kind: ChatKind::PollStarted,
+                            poll: Some(poll_id),
+                        };
+                        room.push_chat(message.clone());
+                        room.broadcast(&ServerMessage::Chat { message });
+                    }
+                }
                 Err(message) => {
                     room.send_to(id, ServerMessage::Error { message: message.into() });
                 }
@@ -349,7 +416,137 @@ async fn handle(
             room.broadcast(&ServerMessage::Poll { poll: view });
             true
         }
+
+        ClientMessage::PollReveal { poll: poll_id, mode } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            let Some(actor) = room.participants.get(&id) else { return true };
+            if !actor.role.can_moderate() {
+                return true;
+            }
+            let author = actor.name.clone();
+            let author_role = actor.role;
+
+            let Some(poll) = room.polls.iter_mut().find(|p| p.id == poll_id) else { return true };
+            // Revealing ends the poll: publishing the tally while answers are
+            // still open would let the last voters follow the room.
+            poll.open = false;
+            poll.revealed = true;
+            poll.reveal_correct = matches!(mode, RevealMode::Correct | RevealMode::Both);
+            let view = poll.view();
+            let summary = summarise_poll(&view, mode);
+            room.broadcast(&ServerMessage::Poll { poll: view });
+
+            // The outcome lands in the chat, where the room is already
+            // looking and where it stays readable after the popup is gone.
+            let message = ChatMessage {
+                id: Uuid::new_v4(),
+                from: id,
+                author,
+                role: author_role,
+                body: summary,
+                at: now_millis(),
+                kind: ChatKind::PollResults,
+                poll: Some(poll_id),
+            };
+            room.push_chat(message.clone());
+            room.broadcast(&ServerMessage::Chat { message });
+            true
+        }
+
+        // ---------------------------------------------------------- the door
+        ClientMessage::Admit { id: target } => {
+            let Some((admitted, role)) = state.admit(room_id, id, target).await else {
+                return true;
+            };
+            announce_join(state, room_id, admitted, role).await;
+            let rooms = state.rooms.read().await;
+            if let Some(room) = rooms.get(room_id) {
+                room.notify_moderators(&ServerMessage::KnockWithdrawn { id: target });
+            }
+            true
+        }
+
+        ClientMessage::Deny { id: target } => {
+            if let Some(outbox) = state.withdraw_knock(room_id, target, Some(id)).await {
+                let _ = outbox.send(ServerMessage::Denied {
+                    reason: "A moderator did not let you in.".into(),
+                });
+            }
+            true
+        }
+
+        // ------------------------------------------------------- room policy
+        ClientMessage::Settings { whiteboard, guest_media, allow_recording } => {
+            let mut rooms = state.rooms.write().await;
+            let Some(room) = rooms.get_mut(room_id) else { return true };
+            if !room.participants.get(&id).is_some_and(|p| p.role.can_moderate()) {
+                return true;
+            }
+            if let Some(value) = whiteboard {
+                room.settings.whiteboard = value;
+                if !value {
+                    room.board.open = false;
+                }
+            }
+            if let Some(value) = guest_media {
+                room.settings.guest_media = value;
+            }
+            if let Some(value) = allow_recording {
+                room.settings.allow_recording = value;
+            }
+            let settings = room.settings;
+            room.broadcast(&ServerMessage::SettingsChanged { settings });
+
+            // Withdrawing permission has to reach the people it applies to,
+            // not just the moderator who changed it.
+            if !settings.guest_media {
+                let revoked: Vec<ParticipantId> = room
+                    .participants
+                    .values()
+                    .filter(|p| !p.role.can_moderate() && (p.media.mic || p.media.cam || p.media.screen))
+                    .map(|p| p.id)
+                    .collect();
+                for target in revoked {
+                    if let Some(participant) = room.participants.get_mut(&target) {
+                        participant.media.mic = false;
+                        participant.media.cam = false;
+                        participant.media.screen = false;
+                        let state = participant.media;
+                        room.broadcast(&ServerMessage::Media { id: target, state });
+                    }
+                }
+            }
+            if !room.board.open {
+                room.broadcast(&ServerMessage::BoardOpen { open: false });
+            }
+            true
+        }
     }
+}
+
+/// Turns a revealed poll into the line that goes into the chat.
+fn summarise_poll(poll: &crate::protocol::PollView, mode: RevealMode) -> String {
+    let mut lines = vec![format!("Poll results — {}", poll.question)];
+
+    if matches!(mode, RevealMode::Counts | RevealMode::Both) {
+        for (index, option) in poll.options.iter().enumerate() {
+            let count = poll.counts.get(index).copied().unwrap_or(0);
+            let share = if poll.total == 0 { 0 } else { count * 100 / poll.total };
+            let mark = if poll.correct == Some(index) { " (correct)" } else { "" };
+            lines.push(format!("{share}%  {option}{mark}"));
+        }
+        lines.push(match poll.total {
+            1 => "1 vote".to_string(),
+            n => format!("{n} votes"),
+        });
+    } else if let Some(index) = poll.correct {
+        if let Some(option) = poll.options.get(index) {
+            lines.push(format!("The answer was: {option}"));
+        }
+    }
+
+    lines.join("\n")
 }
 
 async fn moderate(

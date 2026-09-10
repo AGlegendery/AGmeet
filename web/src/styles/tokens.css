@@ -3,76 +3,26 @@
    --------------------------------------------------------------------------
    One source of truth for colour, depth, glass, shape, type and motion.
    Screens compose these; they never invent their own values.
+
+   Two themes. The neutral family is graphite — a true grey with no blue cast,
+   so the interface reads as a piece of hardware rather than a "dark blue app"
+   — and violet is reserved for action: buttons, active state, focus, live.
    ========================================================================== */
 
 :root {
-  color-scheme: dark;
-
-  /* --- Ground ------------------------------------------------------------
-     Deep navy, never flat black: it gives the atmospheric gradients and the
-     glass surfaces something to sit in. */
-  --ground: #06070f;
-  --ground-deep: #04050b;
-  --ground-raised: #0b0d18;
-
   /* --- Accent ------------------------------------------------------------
-     One family. Used for active, focus, selection and live states only, never
-     as a surface fill across large areas. */
-  --accent: #7b6cff;
-  --accent-bright: #9b8dff;
-  --accent-dim: #5a4de0;
-  --accent-cyan: #4cc9f0;
-  /* Reserved for genuine signal states: live, recording, leave. */
-  --signal: #ff5c7a;
-  --positive: #3ddc97;
-
-  /* --- Text --------------------------------------------------------------
-     Alphas are chosen so every level clears 4.5:1 on --ground-raised.
-     Anything quieter than --text-3 is decorative and must not carry meaning. */
-  --text-1: #f2f4ff;
-  --text-2: rgba(226, 231, 255, 0.66);
-  --text-3: rgba(226, 231, 255, 0.55);
-  /* Decorative only: placeholders and separators. Never carries meaning,
-     because it does not clear 4.5:1. */
-  --text-faint: rgba(226, 231, 255, 0.38);
-  --text-on-accent: #0a0716;
-
-  /* --- Glass -------------------------------------------------------------
-     Four depth levels. Each step comes closer to the viewer: lighter fill,
-     more blur, brighter edge, deeper shadow. Level is a property of the
-     element's role, not of how it happens to look. */
-  --glass-1-bg: rgba(255, 255, 255, 0.028);
-  --glass-1-border: rgba(255, 255, 255, 0.06);
-  --glass-1-blur: 20px;
-
-  --glass-2-bg: rgba(255, 255, 255, 0.045);
-  --glass-2-border: rgba(255, 255, 255, 0.085);
-  --glass-2-blur: 32px;
-
-  --glass-3-bg: rgba(17, 19, 34, 0.72);
-  --glass-3-border: rgba(255, 255, 255, 0.1);
-  --glass-3-blur: 40px;
-
-  --glass-4-bg: rgba(14, 16, 30, 0.82);
-  --glass-4-border: rgba(255, 255, 255, 0.13);
-  --glass-4-blur: 44px;
-
-  /* The 1px inner highlight along the top edge is what reads as refraction
-     rather than as a flat translucent rectangle. */
-  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 0.11);
-
-  /* --- Depth -------------------------------------------------------------
-     Shadows are tinted to the ground hue, never neutral black. */
-  --shadow-1: 0 2px 8px -2px rgba(3, 4, 14, 0.5);
-  --shadow-2: 0 12px 32px -12px rgba(3, 4, 14, 0.7);
-  --shadow-3: 0 24px 60px -20px rgba(3, 4, 14, 0.8);
-  --shadow-4: 0 32px 80px -24px rgba(3, 4, 14, 0.88);
-
-  /* Focus and active glow. Deliberately soft: it marks state, it does not
-     decorate. */
-  --glow-accent: 0 0 0 1px rgba(123, 108, 255, 0.5), 0 0 28px -6px rgba(123, 108, 255, 0.45);
-  --glow-signal: 0 0 0 1px rgba(255, 92, 122, 0.55), 0 0 24px -8px rgba(255, 92, 122, 0.5);
+     Identical in both themes so a button is the same button everywhere. Used
+     for actions, active and focus state, and nothing else. */
+  /* Fills a control, so it must carry white text: #7c3aed is 5.7:1, the
+     lighter #8b5cf6 only 4.23:1. --accent-bright stays light because it is
+     used as *text* and glow on dark surfaces, never as a fill behind text. */
+  --accent: #7c3aed;
+  --accent-bright: #a78bfa;
+  --accent-dim: #6d28d9;
+  --accent-ink: #ffffff;
+  --signal: #f43f5e;
+  --positive: #10b981;
+  --caution: #f59e0b;
 
   /* --- Shape -------------------------------------------------------------
      Generous but graded. Pills are reserved for status and compact controls. */
@@ -120,9 +70,200 @@
   --ease-state: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* --- Structure ---------------------------------------------------------- */
-  --sidebar-w: 232px;
   --panel-w: 336px;
-  --header-h: 68px;
+  --header-h: 64px;
+}
+
+/* ==========================================================================
+   Dark — the default
+   ========================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Graphite, not navy: neutral greys with a trace of warmth so large fields
+     do not look like a blue screen. */
+  --ground: #0b0b0c;
+  --ground-deep: #060607;
+  --ground-raised: #141416;
+
+  /* Alphas are chosen so every level clears 4.5:1 on --ground-raised.
+     Anything quieter than --text-3 is decorative and must not carry meaning. */
+  --text-1: #f4f4f5;
+  --text-2: rgba(240, 240, 244, 0.68);
+  --text-3: rgba(240, 240, 244, 0.56);
+  --text-faint: rgba(240, 240, 244, 0.38);
+
+  /* Four glass depth levels. Each step comes closer to the viewer: lighter
+     fill, more blur, brighter edge, deeper shadow. Level is a property of the
+     element's role, not of how it happens to look. */
+  --glass-1-bg: rgba(255, 255, 255, 0.032);
+  --glass-1-border: rgba(255, 255, 255, 0.07);
+  --glass-1-blur: 20px;
+
+  --glass-2-bg: rgba(255, 255, 255, 0.05);
+  --glass-2-border: rgba(255, 255, 255, 0.095);
+  --glass-2-blur: 32px;
+
+  --glass-3-bg: rgba(24, 24, 27, 0.74);
+  --glass-3-border: rgba(255, 255, 255, 0.11);
+  --glass-3-blur: 40px;
+
+  --glass-4-bg: rgba(20, 20, 23, 0.84);
+  --glass-4-border: rgba(255, 255, 255, 0.14);
+  --glass-4-blur: 44px;
+
+  /* The 1px inner highlight along the top edge is what reads as refraction
+     rather than as a flat translucent rectangle. */
+  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+
+  /* Shadows are tinted to the ground, never neutral black. */
+  --shadow-1: 0 2px 8px -2px rgba(0, 0, 0, 0.55);
+  --shadow-2: 0 12px 32px -12px rgba(0, 0, 0, 0.72);
+  --shadow-3: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  --shadow-4: 0 32px 80px -24px rgba(0, 0, 0, 0.88);
+
+  --glow-accent: 0 0 0 1px rgba(139, 92, 246, 0.5), 0 0 28px -6px rgba(139, 92, 246, 0.45);
+
+  /* Field surfaces: inputs, wells, tracks. */
+  --field-bg: rgba(255, 255, 255, 0.045);
+  --field-bg-hover: rgba(255, 255, 255, 0.065);
+  --hover-wash: rgba(255, 255, 255, 0.055);
+  --divider: rgba(255, 255, 255, 0.08);
+
+  /* The stage's own surface, painted as a child so the glass renderer can
+     sample it (see .stage__ground). */
+  --stage-ground:
+    radial-gradient(34% 26% at 50% 96%, rgba(139, 92, 246, 0.15), transparent 70%),
+    radial-gradient(58% 58% at 18% 12%, rgba(139, 92, 246, 0.1), transparent 66%),
+    radial-gradient(52% 56% at 86% 92%, rgba(255, 255, 255, 0.035), transparent 62%),
+    linear-gradient(158deg, #141416 0%, #0e0e10 60%, #0a0a0b 100%);
+
+  /* Page atmosphere. */
+  --atmosphere:
+    radial-gradient(46% 40% at 18% 8%, rgba(139, 92, 246, 0.14), transparent 62%),
+    radial-gradient(42% 46% at 88% 92%, rgba(255, 255, 255, 0.05), transparent 60%);
+  --grain-opacity: 0.028;
+
+  /* Video tiles and the whiteboard, which must stay dark in both themes:
+     a light frame around a camera feed is glare, and light ink on a dark
+     board is what a projector actually shows well. */
+  --tile-bg: linear-gradient(155deg, #1a1a1d, #0d0d0f);
+  --board-bg: linear-gradient(160deg, #141417, #0d0d0f);
+  --board-grid: rgba(244, 244, 245, 0.075);
+
+  /* Accent applied to a surface, an edge, or text on that surface. Deriving
+     these once is what lets a component say "accent wash" instead of naming
+     a violet, and is why the light theme needs no component overrides. */
+  --accent-wash: rgba(139, 92, 246, 0.16);
+  --accent-wash-soft: rgba(139, 92, 246, 0.08);
+  --accent-wash-hover: rgba(139, 92, 246, 0.24);
+  --accent-edge: rgba(139, 92, 246, 0.32);
+  --accent-edge-strong: rgba(139, 92, 246, 0.55);
+  --accent-glow: rgba(139, 92, 246, 0.6);
+  --accent-text: #ddd6fe;
+
+  --signal-wash: rgba(244, 63, 94, 0.14);
+  --signal-edge: rgba(244, 63, 94, 0.32);
+  --signal-text: #fecdd3;
+
+  /* A dark scrim for labels that sit on video. Unchanged between themes:
+     the thing underneath is a camera feed either way. */
+  --scrim: rgba(9, 9, 11, 0.62);
+  --scrim-ink: #f4f4f5;
+}
+
+/* ==========================================================================
+   Light
+   --------------------------------------------------------------------------
+   Not an inversion. The greys stay graphite, the accent is darkened so it
+   still clears contrast on white, and the glass becomes a white frost rather
+   than a dark one.
+   ========================================================================== */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --accent: #7c3aed;
+  --accent-bright: #6d28d9;
+  --accent-dim: #5b21b6;
+  --accent-ink: #ffffff;
+  --signal: #e11d48;
+  --positive: #059669;
+  --caution: #b45309;
+
+  --ground: #f4f4f5;
+  --ground-deep: #e8e8ea;
+  --ground-raised: #ffffff;
+
+  --text-1: #18181b;
+  --text-2: rgba(24, 24, 27, 0.72);
+  --text-3: rgba(24, 24, 27, 0.62);
+  --text-faint: rgba(24, 24, 27, 0.42);
+
+  --glass-1-bg: rgba(255, 255, 255, 0.62);
+  --glass-1-border: rgba(24, 24, 27, 0.08);
+  --glass-1-blur: 20px;
+
+  --glass-2-bg: rgba(255, 255, 255, 0.74);
+  --glass-2-border: rgba(24, 24, 27, 0.1);
+  --glass-2-blur: 32px;
+
+  --glass-3-bg: rgba(255, 255, 255, 0.88);
+  --glass-3-border: rgba(24, 24, 27, 0.12);
+  --glass-3-blur: 40px;
+
+  --glass-4-bg: rgba(255, 255, 255, 0.92);
+  --glass-4-border: rgba(24, 24, 27, 0.14);
+  --glass-4-blur: 44px;
+
+  --edge-light: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --edge-light-strong: inset 0 1px 0 rgba(255, 255, 255, 1);
+
+  --shadow-1: 0 2px 8px -2px rgba(24, 24, 27, 0.1);
+  --shadow-2: 0 12px 32px -12px rgba(24, 24, 27, 0.18);
+  --shadow-3: 0 24px 60px -20px rgba(24, 24, 27, 0.22);
+  --shadow-4: 0 32px 80px -24px rgba(24, 24, 27, 0.26);
+
+  --glow-accent: 0 0 0 1px rgba(124, 58, 237, 0.4), 0 0 28px -8px rgba(124, 58, 237, 0.4);
+
+  --field-bg: rgba(24, 24, 27, 0.04);
+  --field-bg-hover: rgba(24, 24, 27, 0.065);
+  --hover-wash: rgba(24, 24, 27, 0.05);
+  --divider: rgba(24, 24, 27, 0.1);
+
+  --stage-ground:
+    radial-gradient(34% 26% at 50% 96%, rgba(124, 58, 237, 0.09), transparent 70%),
+    radial-gradient(58% 58% at 18% 12%, rgba(124, 58, 237, 0.06), transparent 66%),
+    linear-gradient(158deg, #ffffff 0%, #f6f6f7 60%, #efeff1 100%);
+
+  --atmosphere:
+    radial-gradient(46% 40% at 18% 8%, rgba(124, 58, 237, 0.1), transparent 62%),
+    radial-gradient(42% 46% at 88% 92%, rgba(24, 24, 27, 0.04), transparent 60%);
+  --grain-opacity: 0.02;
+
+  /* Deliberately unchanged: a camera feed and a whiteboard both read better
+     on a dark ground, whatever the rest of the interface is doing. */
+  --tile-bg: linear-gradient(155deg, #1a1a1d, #0d0d0f);
+  --board-bg: linear-gradient(160deg, #141417, #0d0d0f);
+  --board-grid: rgba(244, 244, 245, 0.075);
+
+  --accent-wash: rgba(124, 58, 237, 0.11);
+  --accent-wash-soft: rgba(124, 58, 237, 0.055);
+  --accent-wash-hover: rgba(124, 58, 237, 0.18);
+  --accent-edge: rgba(124, 58, 237, 0.28);
+  --accent-edge-strong: rgba(124, 58, 237, 0.5);
+  --accent-glow: rgba(124, 58, 237, 0.4);
+  --accent-text: #6d28d9;
+
+  --signal-wash: rgba(225, 29, 72, 0.1);
+  --signal-edge: rgba(225, 29, 72, 0.28);
+  --signal-text: #be123c;
+
+  --scrim: rgba(9, 9, 11, 0.62);
+  --scrim-ink: #f4f4f5;
 }
 
 /* Honour the OS setting rather than only trimming durations: anything that
@@ -140,11 +281,19 @@
    translucent fills would let text sit on video, so the surfaces become
    opaque instead of merely less blurred. */
 @supports not (backdrop-filter: blur(1px)) {
-  :root {
-    --glass-1-bg: rgba(18, 20, 34, 0.94);
-    --glass-2-bg: rgba(20, 22, 38, 0.95);
-    --glass-3-bg: rgba(17, 19, 34, 0.97);
-    --glass-4-bg: rgba(14, 16, 30, 0.98);
+  :root,
+  :root[data-theme="dark"] {
+    --glass-1-bg: #161618;
+    --glass-2-bg: #1a1a1d;
+    --glass-3-bg: #18181b;
+    --glass-4-bg: #141417;
+  }
+
+  :root[data-theme="light"] {
+    --glass-1-bg: #ffffff;
+    --glass-2-bg: #ffffff;
+    --glass-3-bg: #ffffff;
+    --glass-4-bg: #ffffff;
   }
 }
 
@@ -159,14 +308,21 @@
    the expensive part, and a 2px blur costs nearly what a 32px one does while
    looking like a mistake. Flat, opaque, legible, cheap. */
 :root[data-glass="minimal"] {
-  --glass-1-bg: #0e101c;
-  --glass-2-bg: #121422;
-  --glass-3-bg: #141628;
-  --glass-4-bg: #10121e;
+  --glass-1-bg: #141416;
+  --glass-2-bg: #1a1a1d;
+  --glass-3-bg: #18181b;
+  --glass-4-bg: #141417;
   --glass-1-blur: 0px;
   --glass-2-blur: 0px;
   --glass-3-blur: 0px;
   --glass-4-blur: 0px;
+}
+
+:root[data-glass="minimal"][data-theme="light"] {
+  --glass-1-bg: #ffffff;
+  --glass-2-bg: #ffffff;
+  --glass-3-bg: #ffffff;
+  --glass-4-bg: #ffffff;
 }
 
 :root[data-glass="minimal"] .glass-1,

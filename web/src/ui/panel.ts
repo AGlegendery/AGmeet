@@ -8,16 +8,28 @@
 
 import { el, formatClock, hueFromName, initials } from "../dom";
 import { icons } from "../icons";
+import { formatDuration } from "../dom";
 import type { ChatMessage, ModAction, Participant, ParticipantId, Role } from "../types";
+
+export interface Knock {
+  id: ParticipantId;
+  name: string;
+  since: number;
+}
 
 export interface PanelHandlers {
   onSend: (body: string) => void;
   onModerate: (target: ParticipantId, action: ModAction) => void;
+  /** Reopens a poll from its notice in the chat. */
+  onOpenPoll: (poll: string) => void;
+  onAdmit: (id: ParticipantId) => void;
+  onDeny: (id: ParticipantId) => void;
 }
 
 export interface PanelHandles {
   root: HTMLElement;
   setPollCount: (count: number) => void;
+  setKnocks: (knocks: Knock[]) => void;
   addMessage: (message: ChatMessage, selfId: ParticipantId) => void;
   setHistory: (messages: ChatMessage[], selfId: ParticipantId) => void;
   setParticipants: (
@@ -98,9 +110,10 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
   ]);
 
   // --- Participants ------------------------------------------------------
+  const waiting = el("div", { class: "waiting", hidden: true });
   const people = el("div", { class: "people scroll", role: "list", "aria-label": "Participants" });
   const peopleView = el("div", { class: "panel__view", role: "tabpanel", "aria-label": "Participants" }, [
-    people,
+    el("div", { class: "people__scroll scroll" }, [waiting, people]),
   ]);
   peopleView.setAttribute("aria-hidden", "true");
 
@@ -161,6 +174,34 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
     const grouped = message.from === lastAuthor && message.at - lastAt < 120_000;
     lastAuthor = message.from;
     lastAt = message.at;
+
+    // A poll announces itself in the chat so the notice outlives the popup,
+    // reaches late joiners, and gives somebody a way back in to change their
+    // answer while the poll is still open.
+    if (message.kind === "pollStarted" && message.poll) {
+      const pollId = message.poll;
+      const card = el("button", { class: "msg-poll", type: "button" }, [
+        el("span", { class: "msg-poll__mark", html: icons.poll }),
+        el("span", { class: "msg-poll__id" }, [
+          el("span", { class: "msg-poll__title", text: "A poll is started" }),
+          el("span", { class: "msg-poll__q", text: message.body }),
+        ]),
+        el("span", { class: "msg-poll__go", text: "Answer" }),
+      ]);
+      card.addEventListener("click", () => handlers.onOpenPoll(pollId));
+      lastAuthor = null;
+      return el("div", { class: "msg msg--notice" }, [card]);
+    }
+
+    if (message.kind === "pollResults") {
+      lastAuthor = null;
+      return el("div", { class: "msg msg--notice" }, [
+        el("div", { class: "msg-results" }, [
+          el("span", { class: "msg-poll__mark", html: icons.poll }),
+          el("p", { class: "msg-results__body", text: message.body }),
+        ]),
+      ]);
+    }
 
     const classes = ["msg"];
     if (grouped) classes.push("msg--continued");
@@ -356,6 +397,43 @@ export function buildPanel(handlers: PanelHandlers, pollsView: HTMLElement): Pan
     showTab,
     setPollCount(count) {
       pollCount.textContent = count > 0 ? String(count) : "";
+    },
+    setKnocks(list) {
+      waiting.hidden = list.length === 0;
+      if (list.length === 0) {
+        waiting.replaceChildren();
+        return;
+      }
+      waiting.replaceChildren(
+        el("p", { class: "waiting__label", text: list.length === 1 ? "Waiting to join" : `${list.length} waiting to join` }),
+        ...list.map((knock) => {
+          const admit = el("button", { class: "btn btn--accent", type: "button" }, [
+            el("span", { text: "Admit" }),
+          ]);
+          admit.addEventListener("click", () => handlers.onAdmit(knock.id));
+          const deny = el("button", { class: "btn", type: "button" }, [el("span", { text: "Deny" })]);
+          deny.addEventListener("click", () => handlers.onDeny(knock.id));
+
+          return el("div", { class: "waiting__row" }, [
+            el("span", {
+              class: "avatar",
+              style: `--hue:${hueFromName(knock.name)}`,
+              text: initials(knock.name),
+              "aria-hidden": "true",
+            }),
+            el("span", { class: "person__id" }, [
+              el("span", { class: "person__name", text: knock.name }),
+              el("span", {
+                class: "person__role num",
+                // Shows a real wait, so a moderator joining late does not see
+                // a queue that all looks like it arrived a second ago.
+                text: `waiting ${formatDuration(Date.now() - knock.since)}`,
+              }),
+            ]),
+            el("span", { class: "waiting__acts" }, [deny, admit]),
+          ]);
+        })
+      );
     },
     unreadBump() {
       if (active !== "chat") {

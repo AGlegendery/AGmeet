@@ -1,13 +1,13 @@
 /**
- * Pre-join screen.
+ * The lobby: the moment between choosing a room and being in it.
  *
  * Everything that can go wrong with a camera goes wrong here, where it is
- * cheap to fix, rather than in front of a room full of people. The preview is
- * live, the device pickers are real, and the join button says what will
- * happen.
+ * cheap to fix, rather than in front of a room full of people. It also owns
+ * the door: a passcode challenge, or waiting for a moderator, happens on this
+ * screen rather than dropping someone into an error page.
  */
 
-import { el, generateRoomId } from "../dom";
+import { el } from "../dom";
 import { icons } from "../icons";
 import {
   acquireLocalStream,
@@ -16,12 +16,19 @@ import {
   MediaError,
   stopStream,
 } from "../media";
+import type { CreateOptions, RoomLock } from "../types";
+import { buildThemeMenu } from "./settings";
+
+export interface LobbyRequest {
+  room: string;
+  name: string;
+  create?: CreateOptions;
+}
 
 export interface LobbyResult {
   room: string;
-  roomName: string;
   name: string;
-  classroom: boolean;
+  create?: CreateOptions;
   mic: boolean;
   cam: boolean;
   cameraId?: string;
@@ -29,20 +36,46 @@ export interface LobbyResult {
   stream: MediaStream | null;
 }
 
-const NAME_KEY = "agmeet.name";
+/** What the room told us about itself before anyone tried to enter. */
+interface RoomInfo {
+  exists: boolean;
+  name: string | null;
+  lock: RoomLock | null;
+  participants: number;
+  waiting: number;
+}
+
+export type LobbyState =
+  | { kind: "idle" }
+  | { kind: "connecting" }
+  | { kind: "passcode"; retry: boolean }
+  | { kind: "knocking" }
+  | { kind: "denied"; reason: string }
+  | { kind: "missing" };
+
+export interface LobbyHandlers {
+  onJoin: (result: LobbyResult) => void;
+  onPasscode: (passcode: string) => void;
+  onBack: () => void;
+}
+
+export interface LobbyHandles {
+  root: HTMLElement;
+  setState: (state: LobbyState) => void;
+}
 
 export function buildLobby(
-  roomFromUrl: string | null,
-  onJoin: (result: LobbyResult) => void,
-  /** Handed the preview box and its floating controls so the caller can give
-   *  them a glass surface. Live video sits directly behind those controls. */
+  request: LobbyRequest,
+  handlers: LobbyHandlers,
   onSurfaces?: (previewRoot: HTMLElement, controls: HTMLElement) => void
-): HTMLElement {
+): LobbyHandles {
   let stream: MediaStream | null = null;
   let wantMic = true;
   let wantCam = true;
   let cameraId: string | undefined;
   let microphoneId: string | undefined;
+  let info: RoomInfo | null = null;
+  let state: LobbyState = { kind: "idle" };
 
   // --- Preview -----------------------------------------------------------
   const video = el("video", { autoplay: true, playsinline: true, muted: true }) as HTMLVideoElement;
@@ -76,53 +109,20 @@ export function buildLobby(
   const preview = el("div", { class: "lobby__preview" }, [video, previewState, previewControls]);
   video.hidden = true;
 
-  // --- Form --------------------------------------------------------------
-  const nameInput = el("input", {
-    class: "input",
-    type: "text",
-    id: "agmeet-name",
-    maxlength: "64",
-    autocomplete: "name",
-    placeholder: "Your name",
-    value: localStorage.getItem(NAME_KEY) ?? "",
-  }) as HTMLInputElement;
-
-  const nameError = el("p", { class: "field__error", hidden: true, id: "agmeet-name-error" });
-
-  const roomInput = el("input", {
-    class: "input",
-    type: "text",
-    id: "agmeet-room",
-    maxlength: "64",
-    placeholder: "Room code",
-    value: roomFromUrl ?? generateRoomId(),
-    readonly: roomFromUrl !== null,
-  }) as HTMLInputElement;
-
+  // --- Devices -----------------------------------------------------------
   const cameraSelect = el("select", {
     class: "select",
-    id: "agmeet-camera",
+    id: "lobby-camera",
     "aria-label": "Camera",
   }) as HTMLSelectElement;
   const micSelect = el("select", {
     class: "select",
-    id: "agmeet-mic",
+    id: "lobby-mic",
     "aria-label": "Microphone",
   }) as HTMLSelectElement;
 
-  const classroom = el("input", {
-    class: "switch",
-    type: "checkbox",
-    id: "agmeet-classroom",
-  }) as HTMLInputElement;
-
-  const joinButton = el("button", { class: "btn btn--accent btn--lg btn--block", type: "submit" }, [
-    el("span", { text: roomFromUrl ? "Join room" : "Create room" }),
-  ]) as HTMLButtonElement;
-
   const notice = el("p", { class: "field__hint", hidden: true });
 
-  // --- Device handling ---------------------------------------------------
   function paintToggles(): void {
     micToggle.innerHTML = wantMic ? icons.mic : icons.micOff;
     micToggle.classList.toggle("dock__btn--off", !wantMic);
@@ -149,7 +149,6 @@ export function buildLobby(
 
   async function refreshDevices(): Promise<void> {
     const { cameras, microphones } = await listDevices();
-
     const fill = (select: HTMLSelectElement, devices: MediaDeviceInfo[], fallback: string): void => {
       const previous = select.value;
       select.replaceChildren(
@@ -160,14 +159,15 @@ export function buildLobby(
         )
       );
       if (devices.length === 0) {
-        select.append(el("option", { value: "" }, [document.createTextNode(`No ${fallback.toLowerCase()} found`)]));
+        select.append(
+          el("option", { value: "" }, [document.createTextNode(`No ${fallback.toLowerCase()} found`)])
+        );
         select.disabled = true;
       } else {
         select.disabled = false;
         if (previous && devices.some((d) => d.deviceId === previous)) select.value = previous;
       }
     };
-
     fill(cameraSelect, cameras, "Camera");
     fill(micSelect, microphones, "Microphone");
   }
@@ -184,7 +184,6 @@ export function buildLobby(
       );
       return;
     }
-
     if (!isSecureContextForMedia()) {
       showPreviewState(
         "This page is not a secure context",
@@ -209,24 +208,20 @@ export function buildLobby(
       previewState.hidden = hasVideo;
 
       if (!hasVideo && wantCam) {
-        const failure = result.errors.find((e) => e.kind === "camera");
-        showPreviewState("Camera unavailable", failure?.message, true);
+        showPreviewState("Camera unavailable", result.errors.find((e) => e.kind === "camera")?.message, true);
       } else if (!hasVideo) {
         showPreviewState("Camera is off", "Your microphone is still live.");
       }
 
-      if (result.errors.length > 0) {
-        notice.hidden = false;
-        notice.textContent = result.errors.map((e) => e.message).join(" ");
-      } else {
-        notice.hidden = true;
-      }
-
+      notice.hidden = result.errors.length === 0;
+      notice.textContent = result.errors.map((e) => e.message).join(" ");
       await refreshDevices();
     } catch (error) {
-      const message =
-        error instanceof MediaError ? error.message : "Your devices could not be started.";
-      showPreviewState("Devices unavailable", message, true);
+      showPreviewState(
+        "Devices unavailable",
+        error instanceof MediaError ? error.message : "Your devices could not be started.",
+        true
+      );
     }
   }
 
@@ -249,100 +244,196 @@ export function buildLobby(
     void start();
   });
 
-  // --- Submit ------------------------------------------------------------
+  // --- The door ----------------------------------------------------------
+  const passcodeInput = el("input", {
+    class: "input",
+    type: "password",
+    id: "lobby-passcode",
+    autocomplete: "off",
+    placeholder: "Passcode",
+    "aria-label": "Room passcode",
+  }) as HTMLInputElement;
+
+  const passcodeError = el("p", { class: "field__error", hidden: true });
+  const passcodeField = el("div", { class: "field", hidden: true }, [
+    el("label", { class: "field__label", for: "lobby-passcode", text: "Passcode" }),
+    passcodeInput,
+    passcodeError,
+  ]);
+
+  const title = el("h1", { class: "lobby__title", text: "Join the room" });
+  const subtitle = el("p", { class: "lobby__sub", text: "Check your camera and microphone before you go in." });
+  const doorState = el("div", { class: "lobby__door", hidden: true });
+
+  const action = el("button", { class: "btn btn--accent btn--lg btn--block", type: "submit" }, [
+    el("span", { text: "Join the room" }),
+  ]) as HTMLButtonElement;
+
+  const back = el("button", { class: "btn btn--block", type: "button" }, [
+    el("span", { html: icons.chevronRight, style: "transform:rotate(180deg)" }),
+    el("span", { text: "Back" }),
+  ]);
+  back.addEventListener("click", () => {
+    stopStream(stream);
+    handlers.onBack();
+  });
+
+  /** The label is the promise: approval rooms do not say "Join". */
+  function actionLabel(): string {
+    if (request.create) return "Create and enter";
+    if (info?.lock === "approval") return "Ask to join the room";
+    return "Join the room";
+  }
+
+  function paintDoor(): void {
+    passcodeField.hidden = !(state.kind === "passcode" || (info?.lock === "passcode" && !request.create));
+    action.disabled = state.kind === "connecting" || state.kind === "knocking";
+
+    switch (state.kind) {
+      case "connecting":
+        action.replaceChildren(el("span", { text: "Connecting" }));
+        doorState.hidden = true;
+        break;
+      case "knocking":
+        action.replaceChildren(el("span", { text: "Waiting to be let in" }));
+        doorState.hidden = false;
+        doorState.replaceChildren(
+          el("div", { class: "lobby__waiting" }, [
+            el("span", { class: "spinner", "aria-hidden": "true" }),
+            el("div", {}, [
+              el("p", { class: "field__label", text: "A moderator has been asked" }),
+              el("p", {
+                class: "field__hint",
+                text: "You will go straight in when they let you. Keep this tab open.",
+              }),
+            ]),
+          ])
+        );
+        break;
+      case "passcode":
+        action.replaceChildren(el("span", { text: actionLabel() }));
+        doorState.hidden = true;
+        passcodeError.hidden = !state.retry;
+        passcodeError.textContent = state.retry ? "That passcode was not right." : "";
+        passcodeInput.focus();
+        break;
+      case "denied":
+        action.replaceChildren(el("span", { text: actionLabel() }));
+        doorState.hidden = false;
+        doorState.replaceChildren(
+          el("div", { class: "state state--error", style: "padding:var(--s-4);height:auto" }, [
+            el("span", { class: "state__mark", html: icons.alert }),
+            el("p", { class: "state__title", text: "Not admitted" }),
+            el("p", { class: "state__body", text: state.reason }),
+          ])
+        );
+        break;
+      case "missing":
+        action.disabled = true;
+        action.replaceChildren(el("span", { text: "Room not open" }));
+        doorState.hidden = false;
+        doorState.replaceChildren(
+          el("div", { class: "state", style: "padding:var(--s-4);height:auto" }, [
+            el("span", { class: "state__mark", html: icons.rooms }),
+            el("p", { class: "state__title", text: "This room has not started" }),
+            el("p", {
+              class: "state__body",
+              text: "Nobody has opened it yet. Wait for the host, or go back and start it yourself.",
+            }),
+          ])
+        );
+        break;
+      default:
+        action.replaceChildren(el("span", { text: actionLabel() }));
+        doorState.hidden = true;
+        break;
+    }
+  }
+
+  /** Asks the server what this room is before offering to enter it. */
+  async function loadInfo(): Promise<void> {
+    if (request.create) {
+      paintDoor();
+      return;
+    }
+    try {
+      const response = await fetch(`/api/room/${encodeURIComponent(request.room)}`);
+      info = (await response.json()) as RoomInfo;
+    } catch {
+      info = null;
+    }
+    if (info && !info.exists) {
+      state = { kind: "missing" };
+    } else if (info?.name) {
+      title.textContent = info.name;
+      subtitle.textContent =
+        info.participants === 1
+          ? "One person is already in the room."
+          : `${info.participants} people are already in the room.`;
+    }
+    paintDoor();
+  }
+
   const form = el("form", { class: "lobby__form" }, [
-    el("div", {}, [
-      el("h1", { class: "lobby__title", text: roomFromUrl ? "Join the room" : "Start a room" }),
-      el("p", {
-        class: "lobby__sub",
-        text: roomFromUrl
-          ? "Check your camera and microphone before you go in."
-          : "Create a room, then send the link to whoever should be there.",
-      }),
-    ]),
+    el("div", {}, [title, subtitle]),
     el("div", { class: "field" }, [
-      el("label", { class: "field__label", for: "agmeet-name", text: "Display name" }),
-      nameInput,
-      nameError,
-    ]),
-    el("div", { class: "field" }, [
-      el("label", { class: "field__label", for: "agmeet-room", text: "Room code" }),
-      roomInput,
-      el("p", {
-        class: "field__hint",
-        text: roomFromUrl
-          ? "You were invited to this room."
-          : "Anyone with this code and the address of this server can join.",
-      }),
-    ]),
-    el("div", { class: "field" }, [
-      el("label", { class: "field__label", for: "agmeet-camera", text: "Camera" }),
+      el("label", { class: "field__label", for: "lobby-camera", text: "Camera" }),
       cameraSelect,
     ]),
     el("div", { class: "field" }, [
-      el("label", { class: "field__label", for: "agmeet-mic", text: "Microphone" }),
+      el("label", { class: "field__label", for: "lobby-mic", text: "Microphone" }),
       micSelect,
     ]),
-    ...(roomFromUrl
-      ? []
-      : [
-          el("label", { class: "toggle", for: "agmeet-classroom" }, [
-            classroom,
-            el("span", { class: "toggle__text" }, [
-              el("span", { class: "field__label", style: "display:block", text: "Classroom mode" }),
-              el("span", {
-                class: "field__hint",
-                style: "display:block;margin-top:2px",
-                text: "Gives the teacher priority on the stage and moderation over the room.",
-              }),
-            ]),
-          ]),
-        ]),
+    passcodeField,
     notice,
-    joinButton,
+    doorState,
+    action,
+    back,
   ]) as HTMLFormElement;
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const name = nameInput.value.trim();
-    if (!name) {
-      nameError.hidden = false;
-      nameError.textContent = "Enter a name so people know who joined.";
-      nameInput.setAttribute("aria-invalid", "true");
-      nameInput.setAttribute("aria-describedby", "agmeet-name-error");
-      nameInput.focus();
-      return;
-    }
-    const room = roomInput.value.trim();
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(room)) {
-      notice.hidden = false;
-      notice.textContent = "Room codes use letters, numbers, dashes and underscores only.";
-      roomInput.focus();
+    if (state.kind === "missing" || state.kind === "knocking") return;
+
+    // A passcode challenge is answered on the socket that asked for it.
+    if (state.kind === "passcode") {
+      const value = passcodeInput.value.trim();
+      if (!value) {
+        passcodeInput.focus();
+        return;
+      }
+      handlers.onPasscode(value);
       return;
     }
 
-    localStorage.setItem(NAME_KEY, name);
-    joinButton.disabled = true;
-    joinButton.replaceChildren(el("span", { text: "Connecting" }));
-
-    onJoin({
-      room,
-      roomName: room,
-      name,
-      classroom: classroom.checked,
+    handlers.onJoin({
+      room: request.room,
+      name: request.name,
+      create: request.create,
       mic: wantMic && (stream?.getAudioTracks().length ?? 0) > 0,
       cam: wantCam && (stream?.getVideoTracks().length ?? 0) > 0,
       cameraId,
       microphoneId,
       stream,
-    });
+      ...(passcodeInput.value.trim() ? { passcode: passcodeInput.value.trim() } : {}),
+    } as LobbyResult);
   });
 
   paintToggles();
   void start();
+  void loadInfo();
   onSurfaces?.(preview, previewControls);
 
-  return el("main", { class: "lobby" }, [
+  const root = el("main", { class: "lobby" }, [
+    el("div", { class: "lobby__top" }, [buildThemeMenu()]),
     el("div", { class: "lobby__card glass-2" }, [preview, form]),
   ]);
+
+  return {
+    root,
+    setState(next) {
+      state = next;
+      paintDoor();
+    },
+  };
 }
