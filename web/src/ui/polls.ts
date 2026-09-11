@@ -7,7 +7,7 @@
  * all of that bought nothing.
  */
 
-import { el } from "../dom";
+import { dismissable, el } from "../dom";
 import { icons } from "../icons";
 import type { PollView } from "../types";
 
@@ -153,9 +153,7 @@ export function buildPolls(handlers: PollHandlers): PollHandles {
     );
     close();
   });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !layer.hidden) close();
-  });
+  dismissable(layer, close);
 
   reset();
 

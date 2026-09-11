@@ -264,7 +264,7 @@ Two environment variables, both optional: `AGMEET_URL` to point at a server
 somewhere other than `http://127.0.0.1:8080`, and `CHROMIUM_PATH` to use a
 Chromium that is already on the machine instead of downloading one.
 
-Six suites:
+Seven suites:
 
 | Suite | Covers |
 | --- | --- |
@@ -272,6 +272,7 @@ Six suites:
 | `classroom` | The whiteboard and polls — reading canvas pixels on the *receiving* side to prove ink crossed the wire, and running a poll from the dock through to results in the chat. |
 | `room` | The dashboard, all four door policies, guest-media policy, recording, and both themes. |
 | `accounts` | Signing in, what each role may do, custom roles, and a socket that signs in as a viewer and then claims everything the role forbids. |
+| `layout` | Every view at phone, tablet and laptop width: nothing off the side, nothing cut off, nothing buried under an open panel, and every control big enough to hit on a touch screen. |
 | `glass` | That a weak client resolves to a lower tier and never requests the shader bundle, and that a forced `full` client renders the shader canvas. |
 | `accessibility` | Text contrast against WCAG AA with every glass layer composited, in both themes, and that every control is keyboard reachable and named. |
 

@@ -13,7 +13,7 @@ import "./styles/layout.css";
 import "./styles/components.css";
 import "./styles/views.css";
 
-import { decodeBase64, el, prefersReducedMotion, qs, saveBlob } from "./dom";
+import { decodeBase64, dismissable, el, prefersReducedMotion, qs, saveBlob } from "./dom";
 import { detectTier, GlassSurfaces } from "./glass";
 import { icons } from "./icons";
 import {
@@ -356,9 +356,11 @@ function startMeeting(
       ]),
     ]),
   ]);
-  rosterClose.addEventListener("click", () => {
+  const closeRoster = (): void => {
     rosterLayer.hidden = true;
-  });
+  };
+  rosterClose.addEventListener("click", closeRoster);
+  dismissable(rosterLayer, closeRoster);
 
   const roomMenu = buildRoomMenu({
     onSettings: (patch) => signaling.send({ t: "settings", ...patch }),

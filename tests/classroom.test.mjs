@@ -82,6 +82,48 @@ await host.click('.dock__btn[aria-label="Close the whiteboard"]');
 await guest.waitForTimeout(700);
 check("closing the board returns the grid", await host.isVisible(".stage__grid > .tile"));
 
+console.log("\n--- the board after a resize ---");
+// The canvas takes its drawing size from the size it is laid out at. When it
+// was in flow, its own width and height attributes could become that layout
+// size, and the board grew with every viewport change until the pointer and
+// the ink were nowhere near each other.
+await host.click('.dock__btn[aria-label="Open the whiteboard"]');
+await host.waitForTimeout(700);
+for (const width of [390, 768, 1440]) {
+  await host.setViewportSize({ width, height: width === 1440 ? 900 : 1024 });
+  await host.waitForTimeout(700);
+  const fit = await host.evaluate(() => {
+    const board = document.querySelector(".board").getBoundingClientRect();
+    const canvas = document.querySelector(".board__canvas").getBoundingClientRect();
+    return {
+      dh: Math.round(Math.abs(board.height - canvas.height)),
+      dw: Math.round(Math.abs(board.width - canvas.width)),
+      board: `${Math.round(board.width)}x${Math.round(board.height)}`,
+      canvas: `${Math.round(canvas.width)}x${Math.round(canvas.height)}`,
+    };
+  });
+  check(`the canvas still matches the board at ${width}px`, fit.dh < 4 && fit.dw < 4, `${fit.board} vs ${fit.canvas}`);
+}
+
+// And the ink lands under the pointer, which is what that bug cost.
+await host.click('.board__moderator button[aria-label^="Clear"]').catch(() => {});
+await host.waitForTimeout(400);
+await scribble(host, [0.3, 0.3], [0.7, 0.7]);
+const landed = await host.evaluate(() => {
+  const canvas = document.querySelector(".board__canvas");
+  const ctx = canvas.getContext("2d");
+  const at = (fx, fy) => {
+    const d = ctx.getImageData(Math.round(canvas.width * fx), Math.round(canvas.height * fy), 1, 1).data;
+    return d[3] > 12;
+  };
+  // On the line, and well off it.
+  return { onLine: at(0.5, 0.5), offLine: at(0.12, 0.85) };
+});
+check("ink lands under the pointer after a resize", landed.onLine && !landed.offLine, JSON.stringify(landed));
+await host.click('.dock__btn[aria-label="Close the whiteboard"]');
+await host.setViewportSize({ width: 1440, height: 900 });
+await host.waitForTimeout(500);
+
 console.log("\n--- polls: the popup ---");
 // Polls are started from the dock's labelled More menu, not a panel tab.
 await guest.click('.dock__btn[aria-label="More room actions"]');

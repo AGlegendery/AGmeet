@@ -6,7 +6,7 @@
  * answer can still be changed until the operator ends it.
  */
 
-import { el } from "../dom";
+import { dismissable, el } from "../dom";
 import { icons } from "../icons";
 import type { PollView, RevealMode } from "../types";
 
@@ -196,9 +196,7 @@ export function buildPollDialog(handlers: PollDialogHandlers): PollDialogHandles
     );
   }
 
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !root.hidden) close();
-  });
+  dismissable(root, close);
 
   return {
     root,

@@ -169,6 +169,15 @@ export function buildHeader(
   narrow.addEventListener("change", applyViewport);
   applyViewport();
 
+  // On a phone the context panel is a sheet over the stage, and it has to
+  // start below this header — covering it takes away the only control that
+  // closes the sheet, and there is no keyboard to escape with. The header is
+  // the only thing that knows how tall it ended up, so it says so.
+  new ResizeObserver(() => {
+    const height = Math.round(root.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty("--header-live-h", `${height}px`);
+  }).observe(root);
+
   let startedAt = Date.now();
 
   return {

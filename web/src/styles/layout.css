@@ -153,9 +153,14 @@
 
   .panel {
     position: absolute;
-    top: var(--s-3);
+    /* Below the header from here down. As an overlay it otherwise covers the
+       right end of the header — where the button that closes it lives. */
+    top: calc(var(--header-live-h, 64px) + var(--s-3) + var(--s-3));
     right: var(--s-3);
-    bottom: var(--s-3);
+    /* And above the control bar. As an overlay it reached down over the right
+       end of the bar, which put Leave — and on a narrow tablet the whole
+       right half of it — behind the chat. */
+    bottom: calc(var(--dock-h, 64px) + var(--dock-bottom) + var(--s-3) + var(--s-3));
     z-index: 30;
     width: var(--panel-w);
     max-width: calc(100vw - var(--s-6));
@@ -212,13 +217,28 @@
     border-radius: var(--r-lg);
   }
 
+  /* The panel is a sheet over the whole stage here, but it stops above the
+     control bar. Covering it meant that opening the chat during a call took
+     the microphone away with it, and muting first needed two taps and the
+     presence of mind to find the right one. */
   .panel {
-    top: var(--s-2);
+    /* Same rule, this breakpoint's gutter. On a phone the sheet covers the
+       whole stage, so losing the header would leave nothing to close it with
+       and no keyboard to escape with. */
+    top: calc(var(--header-live-h, 52px) + var(--s-2) + var(--s-2));
     right: var(--s-2);
-    bottom: var(--s-2);
+    /* The bar's own height and offset, plus this element's gutter and a gap:
+       the two are siblings on screen and should not touch. */
+    bottom: calc(var(--dock-h, 56px) + var(--dock-bottom) + var(--s-2) + var(--s-2));
     left: var(--s-2);
     width: auto;
     max-width: none;
     border-radius: var(--r-lg);
+  }
+
+  /* And the bar sits above the sheet, so the menus it opens upward are not
+     swallowed by it. */
+  .dock {
+    z-index: 40;
   }
 }

@@ -798,8 +798,22 @@
   background-size: 26px 26px;
 }
 
+/* Positioned out of flow on purpose.
+   A canvas has an intrinsic size — its width and height attributes — and the
+   drawing code sets those from the size it is laid out at, times the device
+   pixel ratio. In flow, any moment where the percentage height could not
+   resolve let that intrinsic size become the layout size instead, and on a
+   2x screen the board doubled in height with every viewport change; ink then
+   landed nowhere near the pointer. Filling the board by inset takes the
+   attributes out of the layout entirely. */
 .board__canvas {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  /* Both are needed. A canvas is a replaced element, so `auto` width and
+     height resolve to its intrinsic size — the width and height attributes,
+     300x150 by default — and the insets would only position that. Out of
+     flow, these percentages resolve against a board whose height no longer
+     depends on the canvas, which is what breaks the loop. */
   width: 100%;
   height: 100%;
   cursor: crosshair;
@@ -813,21 +827,22 @@
 .board__toolbar {
   position: absolute;
   top: var(--s-4);
-  left: 50%;
+  /* Spanning the board and centring with auto margins, as the control dock
+     does. It used to scroll sideways with the scrollbar hidden, which on a
+     phone left six of its seventeen tools — the eraser and every moderator
+     control — off the end of a bar that gave no sign there was more of it. */
+  left: var(--s-3);
+  right: var(--s-3);
+  width: fit-content;
+  margin-inline: auto;
   z-index: 10;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  max-width: calc(100% - var(--s-8));
   padding: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
   border-radius: var(--r-pill);
-  transform: translateX(-50%);
-}
-
-.board__toolbar::-webkit-scrollbar {
-  display: none;
 }
 
 .board__toolbar.is-readonly {
@@ -889,6 +904,17 @@
   transition: background var(--m-fast) var(--ease-state);
 }
 
+/* Touch: 26px of colour is a comfortable target for a cursor and a fiddly one
+   for a fingertip. Keyed to the input device rather than the window width —
+   a tablet in landscape is still a finger, a narrow window is still a mouse. */
+@media (pointer: coarse) {
+  .board__swatch,
+  .board__size {
+    width: 32px;
+    height: 32px;
+  }
+}
+
 .board__size span {
   display: block;
   background: var(--text-2);
@@ -926,13 +952,34 @@
 @media (max-width: 720px) {
   .board__toolbar {
     top: var(--s-2);
+    left: var(--s-2);
+    right: var(--s-2);
     gap: 4px;
-    max-width: calc(100% - var(--s-4));
   }
 
-  .board__swatch {
-    width: 24px;
-    height: 24px;
+
+  /* Wrapped, so the pill becomes a rounded block. */
+  .board__toolbar {
+    border-radius: var(--r-lg);
+  }
+
+  /* The toolbar's own dividers become its wrap points, so the rows are the
+     groups it already had: colours, then pens, then the moderator's tools.
+     Left to wrap where it ran out of room, a single pen size ended up
+     stranded at the end of the colour row looking like a speck of dust.
+     Only the top-level ones: the moderator group carries a divider of its
+     own, and a full-width break inside it threw its own buttons out of the
+     toolbar entirely. */
+  .board__toolbar > .board__divider {
+    flex-basis: 100%;
+    width: 100%;
+    height: 0;
+    margin: 0;
+    background: none;
+  }
+
+  .board__moderator .board__divider {
+    display: none;
   }
 }
 

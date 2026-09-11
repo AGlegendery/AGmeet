@@ -102,3 +102,22 @@ export function decodeBase64(data: string): Uint8Array<ArrayBuffer> {
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+
+/**
+ * Escape, and a click on the backdrop, close a dialog layer.
+ *
+ * Both are the first things people try, and a dialog that ignores them feels
+ * stuck even when it has a button. Deliberately not used for a dialog that
+ * must be answered — the one offering a recording has nowhere to put the file
+ * if it is waved away.
+ */
+export function dismissable(layer: HTMLElement, close: () => void): void {
+  // pointerdown rather than click: a click started inside the dialog and
+  // released on the backdrop (a drag across a text field) is not a dismissal.
+  layer.addEventListener("pointerdown", (event) => {
+    if (event.target === layer) close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && layer.isConnected && !layer.hidden) close();
+  });
+}
