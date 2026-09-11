@@ -264,5 +264,52 @@ console.log("\n--- the room ---");
   await host.context().close();
 }
 
+// --- A full room ----------------------------------------------------------
+console.log("\n--- six people ---");
+{
+  const ROOM = "layout-crowd";
+  const host = await createRoom(browser, "Golnar Shahbazi", ROOM, {}, { hasTouch: true });
+  const others = [];
+  for (const name of ["Toma Ferreiro", "Devrim Akbulut", "Léa Fontaine", "Nnamdi Okonkwo", "Sahar Delavari"]) {
+    others.push(await joinAndEnter(browser, name, ROOM));
+    await host.waitForTimeout(700);
+  }
+  await host.waitForTimeout(3000);
+
+  for (const size of WIDTHS) {
+    await host.setViewportSize({ width: size.width, height: size.height });
+    // The bar wraps at narrow widths, which changes how much room the tiles
+    // have. Long enough for that to settle and the layout to run again.
+    await host.waitForTimeout(1500);
+    const grid = await host.evaluate(() => {
+      const g = document.querySelector(".stage__grid");
+      const box = g.getBoundingClientRect();
+      const style = getComputedStyle(g);
+      const top = box.top + parseFloat(style.paddingTop);
+      const bottom = box.bottom - parseFloat(style.paddingBottom);
+      const tiles = [...g.querySelectorAll(":scope > .tile")];
+      const clipped = tiles.filter((t) => {
+        const r = t.getBoundingClientRect();
+        return r.top < top - 1 || r.bottom > bottom + 1;
+      });
+      return {
+        tiles: tiles.length,
+        clipped: clipped.length,
+        cols: style.getPropertyValue("--cols").trim(),
+        size: style.getPropertyValue("--tile-w").trim(),
+      };
+    });
+    check(
+      `six people @${size.label}: every tile is fully on the stage`,
+      grid.tiles === 6 && grid.clipped === 0,
+      `${grid.tiles} tiles, ${grid.cols} columns at ${grid.size}, ${grid.clipped} clipped`
+    );
+    await audit(host, `six people @${size.label}`);
+  }
+
+  for (const page of others) await page.context().close();
+  await host.context().close();
+}
+
 await browser.close();
 process.exit(finish() === 0 ? 0 : 1);

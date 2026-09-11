@@ -67,8 +67,14 @@ export class Stage {
       this.grid,
     ]);
 
+    // The grid, not the stage. The control bar publishes its measured height
+    // and the grid keeps that much clearance below the tiles as padding, so
+    // when the bar wraps to a second row the stage does not change size at
+    // all — only the grid's content box does. Watching the stage meant the
+    // tiles kept a height that no longer fitted, and with six people on a
+    // phone the first and last rows were clipped off the top and bottom.
     this.resizeObserver = new ResizeObserver(() => this.relayout());
-    this.resizeObserver.observe(this.root);
+    this.resizeObserver.observe(this.grid);
   }
 
   private buildEmptyState(): HTMLElement {
@@ -382,6 +388,7 @@ export class Stage {
 
     let bestColumns = 1;
     let bestWidth = 0;
+    let bestRows = count;
 
     for (let columns = 1; columns <= count; columns += 1) {
       const rows = Math.ceil(count / columns);
@@ -389,9 +396,15 @@ export class Stage {
       const cellHeight = (height - GAP * (rows - 1)) / rows;
       if (cellWidth <= 0 || cellHeight <= 0) continue;
       const tileWidth = Math.min(cellWidth, cellHeight * ASPECT);
-      if (tileWidth > bestWidth) {
+      // Same size in fewer rows is the better arrangement, and a tie between
+      // a tall stack and a wide one is common on a phone.
+      const better =
+        tileWidth > bestWidth + 0.5 ||
+        (tileWidth > bestWidth - 0.5 && rows < bestRows);
+      if (better) {
         bestWidth = tileWidth;
         bestColumns = columns;
+        bestRows = rows;
       }
     }
 
